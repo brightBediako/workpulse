@@ -1,0 +1,61 @@
+# HMS — Hotel Management System
+
+# Local agent / planning docs (keep on disk, do not push)
+/AGENTS.md
+/context/
+
+# Secrets (keep .env.example committed)
+.env
+.env.local
+.env.*.local
+
+# Composer
+/vendor/
+composer.phar
+
+# Node / Tailwind build toolchain
+/node_modules/
+npm-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Runtime storage (keep directory structure via .gitkeep)
+/storage/logs/*
+!/storage/logs/.gitkeep
+/storage/backups/*
+!/storage/backups/.gitkeep
+/storage/cache/*
+!/storage/cache/.gitkeep
+/storage/uploads/*
+!/storage/uploads/.gitkeep
+!/storage/uploads/.htaccess
+
+# User uploads (guest IDs, receipts, etc.)
+/public/uploads/*
+!/public/uploads/.gitkeep
+
+# PHP / tooling caches
+.phpunit.result.cache
+.php-cs-fixer.cache
+.phpstan.cache
+/.phpunit.cache/
+
+# OS
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# Editors / IDEs
+/.idea/
+/.vscode/
+*.swp
+*.swo
+*~
+
+# Cursor / local agent tooling
+.Cursor/
+.agents/
+skills-lock.json
+
+# Scratch notes (not project docs)
+criteria.md

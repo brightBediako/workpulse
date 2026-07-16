@@ -1,16 +1,22 @@
 {
-  "name": "joydome-api",
+  "name": "workpulse-api",
   "version": "1.0.0",
   "main": "server.js",
   "type": "module",
   "scripts": {
     "server": "nodemon server.js",
-    "start": "node server.js"
+    "start": "node server.js",
+    "test": "node --test tests/**/*.test.js",
+    "seed:categories": "node scripts/seedCategories.js"
   },
-  "keywords": [],
+  "keywords": [
+    "workpulse",
+    "marketplace",
+    "workforce"
+  ],
   "author": "Bright Bediako",
   "license": "ISC",
-  "description": "",
+  "description": "WorkPulse Connect REST API — workforce and service marketplace",
   "dependencies": {
     "bcrypt": "^6.0.0",
     "cookie-parser": "^1.4.7",
@@ -21,6 +27,7 @@
     "mongoose": "^8.18.0",
     "nodemailer": "^7.0.9",
     "nodemon": "^3.1.10",
+    "socket.io": "^4.8.3",
     "stripe": "^18.5.0"
   }
 }

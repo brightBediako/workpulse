@@ -1,0 +1,144 @@
+@import "tailwindcss";
+
+@theme {
+  /* Pulse Field — context/ui-tokens.md */
+  --color-surface: #f4fbf6;
+  --color-surface-dim: #d4dcd7;
+  --color-surface-bright: #f4fbf6;
+  --color-surface-container-lowest: #ffffff;
+  --color-surface-container-low: #eef5f0;
+  --color-surface-container: #e8f0ea;
+  --color-surface-container-high: #e2eae5;
+  --color-surface-container-highest: #dde4df;
+  --color-on-surface: #161d1a;
+  --color-on-surface-variant: #404845;
+  --color-inverse-surface: #2b322f;
+  --color-inverse-on-surface: #ebf3ed;
+  --color-outline: #717975;
+  --color-outline-variant: #c0c8c4;
+  --color-surface-tint: #3b675a;
+  --color-primary: #002119;
+  --color-on-primary: #ffffff;
+  --color-primary-container: #06382d;
+  --color-on-primary-container: #75a293;
+  --color-inverse-primary: #a2d0c0;
+  --color-secondary: #855300;
+  --color-on-secondary: #ffffff;
+  --color-secondary-container: #fea619;
+  --color-on-secondary-container: #684000;
+  --color-tertiary: #001c3b;
+  --color-on-tertiary: #ffffff;
+  --color-tertiary-container: #143156;
+  --color-on-tertiary-container: #7f9ac4;
+  --color-error: #ba1a1a;
+  --color-on-error: #ffffff;
+  --color-error-container: #ffdad6;
+  --color-on-error-container: #93000a;
+  --color-primary-fixed: #bdeddc;
+  --color-primary-fixed-dim: #a2d0c0;
+  --color-on-primary-fixed: #002019;
+  --color-on-primary-fixed-variant: #224e42;
+  --color-secondary-fixed: #ffddb8;
+  --color-secondary-fixed-dim: #ffb95f;
+  --color-on-secondary-fixed: #2a1700;
+  --color-on-secondary-fixed-variant: #653e00;
+  --color-tertiary-fixed: #d5e3ff;
+  --color-tertiary-fixed-dim: #adc8f5;
+  --color-on-tertiary-fixed: #001c3b;
+  --color-on-tertiary-fixed-variant: #2d486d;
+  --color-background: #f4fbf6;
+  --color-on-background: #161d1a;
+  --color-surface-variant: #dde4df;
+  --color-amber-cta: #f59e0b;
+  --color-amber-cta-text: #5c2e00;
+
+  --font-sans: var(--font-plus-jakarta), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-ibm-plex), ui-monospace, monospace;
+
+  --radius-sm: 0.125rem;
+  --radius-DEFAULT: 0.25rem;
+  --radius-md: 0.375rem;
+  --radius-lg: 0.5rem;
+  --radius-xl: 0.75rem;
+  --radius-card: 0.75rem;
+
+  --spacing-xs: 4px;
+  --spacing-sm: 8px;
+  --spacing-md: 16px;
+  --spacing-lg: 24px;
+  --spacing-xl: 40px;
+  --spacing-margin-mobile: 16px;
+  --spacing-margin-desktop: 32px;
+  --spacing-gutter: 16px;
+  --container-max: 1280px;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  background: var(--color-background);
+  color: var(--color-on-surface);
+  font-family: var(--font-sans);
+  font-size: 15px;
+  line-height: 22px;
+}
+
+.font-display {
+  font-size: 32px;
+  line-height: 40px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+
+.font-page-title {
+  font-size: 24px;
+  line-height: 32px;
+  font-weight: 600;
+}
+
+.font-section-title {
+  font-size: 18px;
+  line-height: 24px;
+  font-weight: 600;
+}
+
+.font-label-caps {
+  font-size: 11px;
+  line-height: 16px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.font-body-dense {
+  font-size: 13px;
+  line-height: 18px;
+}
+
+.font-data-price {
+  font-family: var(--font-mono);
+  font-size: 15px;
+  line-height: 20px;
+  font-weight: 600;
+}
+
+.font-data-ref {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 16px;
+}
+
+.hero-gradient {
+  background: linear-gradient(
+    90deg,
+    rgba(244, 251, 246, 1) 30%,
+    rgba(244, 251, 246, 0.8) 50%,
+    rgba(244, 251, 246, 0) 100%
+  );
+}
+
+.max-w-container {
+  max-width: var(--container-max);
+}

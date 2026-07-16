@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="800" height="500" viewBox="0 0 800 500" fill="none">
+  <rect width="800" height="500" fill="#E8F0EA"/>
+  <rect x="80" y="120" width="640" height="260" rx="12" fill="#DDE4DF"/>
+  <text x="400" y="260" text-anchor="middle" fill="#404845" font-family="system-ui,sans-serif" font-size="24">WorkPulse service</text>
+</svg>

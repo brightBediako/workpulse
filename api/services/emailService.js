@@ -55,6 +55,12 @@ const defaultFrom =
   process.env.EMAIL_USER ||
   `no-reply@${process.env.DOMAIN || "localhost"}`;
 
+const clientBaseUrl = () =>
+  (process.env.CLIENT_URL || process.env.DOMAIN || "http://localhost:5173").replace(
+    /\/$/,
+    ""
+  );
+
 const handleSend = async (message) => {
   const transporter = await createTransporter();
   // ensure we set a from address
@@ -114,32 +120,32 @@ export const sendRegisterNotificationEmail = async (to, username) => {
   try {
     const message = {
       to: to,
-      subject: "Welcome to JoyDom – Your Account Was Created Successfully!",
-      html: `<p>Hi ${username}, 👋</p>
+      subject: "Welcome to WorkPulse Connect — your account is ready",
+      html: `<p>Hi ${username || "there"},</p>
 
             <p>
-               Your account has been <strong>created successfully</strong>. You can now log in and start exploring the platform.
+               Your <strong>WorkPulse Connect</strong> account has been <strong>created successfully</strong>. You can log in to find skilled workers or offer your services.
             </p>
 
             <p>
-               Whenever you're ready, you can also become a <strong>vendor</strong> and start creating service with just a click.
+               Whenever you're ready, switch on <strong>seller mode</strong> and publish a service listing (gig) for customers to discover.
             </p>
 
             <p>
-              We're excited to have you on board! 
+              We're excited to have you on board.
             </p>
 
             <p>
-               If you have any questions or need help, feel free to reply to this email or reach out to our support team.
+               If you have any questions, reply to this email or contact support.
             </p>
 
             <p>
-              Happy Freelancing!
+              Welcome to the marketplace.
             </p>
 
             <br>
 
-            <p>– The <strong>JoyDom Team</strong> </p>
+            <p>— The <strong>WorkPulse Connect</strong> team</p>
             `,
     };
     const info = await handleSend(message);
@@ -156,10 +162,11 @@ export const sendRegisterNotificationEmail = async (to, username) => {
 //
 export const sendVerificationEmail = async (to, token) => {
   try {
+    const base = clientBaseUrl();
     const message = {
       to,
-      subject: "JoyDom | Account Verification Token",
-      html: `<p>Click <a href="https://brightbediako.netlify.app/verify-email/${token}">here</a> to verify your email account.</p>`,
+      subject: "WorkPulse Connect | Verify your email",
+      html: `<p>Click <a href="${base}/verify-email/${token}">here</a> to verify your email account.</p>`,
     };
     const info = await handleSend(message);
     return info;
@@ -173,13 +180,14 @@ export const sendVerificationEmail = async (to, token) => {
 
 export const sendPasswordResetEmail = async (to, token) => {
   try {
+    const base = clientBaseUrl();
     const message = {
       to,
-      subject: "JoyDom | Password Reset Code",
+      subject: "WorkPulse Connect | Password reset",
       html: `<p>Click 
   <a 
-    href="https://brightbediako.netlify.app/reset-password/${token}" 
-    style="color: #1a73e8; text-decoration: none; font-weight: bold;"
+    href="${base}/reset-password/${token}" 
+    style="color: #06382d; text-decoration: none; font-weight: bold;"
     target="_blank"
   >
     here
@@ -203,18 +211,19 @@ export const sendProductNotificationEmail = async (
   messageText
 ) => {
   try {
+    const base = clientBaseUrl();
     const message = {
       to: to,
-      subject: "JoyDom | New Product Created",
+      subject: "WorkPulse Connect | New service listing",
       html: `<p>${messageText}</p>
 
 <p>
   <a 
-    href="https://brightbediako.netlify.app/products/${productId}" 
-    style="color: #1a73e8; text-decoration: none; font-weight: bold;" 
+    href="${base}/gigs/${productId}" 
+    style="color: #06382d; text-decoration: none; font-weight: bold;" 
     target="_blank"
   >
-    View Product
+    View listing
   </a>
 </p>
 `,
@@ -232,12 +241,13 @@ export const sendProductNotificationEmail = async (
 
 export const sendOrderNotificationEmail = async (to, orderId, messageText) => {
   try {
+    const base = clientBaseUrl();
     const message = {
       to: to,
-      subject: "JoyDom | New Order Placed",
+      subject: "WorkPulse Connect | New order placed",
       html: `<p>${messageText}</p>
-        <p> <a href="https://brightbediako.netlify.app/orders/${orderId}" style="color: #1a73e8; text-decoration: none; font-weight: bold;" target="_blank">
-      View Order
+        <p> <a href="${base}/orders/${orderId}" style="color: #06382d; text-decoration: none; font-weight: bold;" target="_blank">
+      View order
     </a>
   </p>
   `,
@@ -259,12 +269,13 @@ export const sendOrderUpdateNotificationEmail = async (
   messageText
 ) => {
   try {
+    const base = clientBaseUrl();
     const message = {
       to: to,
-      subject: "JoyDom | Order Status Updated",
+      subject: "WorkPulse Connect | Order status updated",
       html: `<p>${messageText}</p>
-        <p> <a href="https://brightbediako.netlify.app/orders/${orderId}" style="color: #1a73e8; text-decoration: none; font-weight: bold;" target="_blank">
-      View Order
+        <p> <a href="${base}/orders/${orderId}" style="color: #06382d; text-decoration: none; font-weight: bold;" target="_blank">
+      View order
     </a>
   </p>
   `,
@@ -284,14 +295,14 @@ export const sendUpdateNotificationEmail = async (to, username) => {
   try {
     const message = {
       to: to,
-      subject: "JoyDom – Email Update Successfully!",
-      html: `<p>Hi ${username}, </p>
+      subject: "WorkPulse Connect — email updated successfully",
+      html: `<p>Hi ${username || "there"},</p>
   
-              <p> You can now log in with your new email address.</p>
+              <p>You can now log in to WorkPulse Connect with your new email address.</p>
   
               <br>
   
-              <p>– The <strong>JoyDom Team</strong> </p>
+              <p>— The <strong>WorkPulse Connect</strong> team</p>
               `,
     };
     const info = await handleSend(message);

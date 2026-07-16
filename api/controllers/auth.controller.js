@@ -1,9 +1,15 @@
 import User from "../models/user.model.js";
-import Notification from "../models/notification.model.js";
 import { createError } from "../middlewares/globalErrHandler.js";
 import bcrypt from "bcrypt";
 import jwt from "jsonwebtoken";
 import { sendRegisterNotificationEmail } from "../services/emailService.js";
+import { getAccessTokenCookieOptions } from "../utils/authCookies.js";
+import { createNotification } from "../services/notificationService.js";
+
+const bcryptSaltRounds = () => {
+  const parsed = parseInt(process.env.BCRYPT_SALT_ROUNDS || "12", 10);
+  return Number.isFinite(parsed) && parsed >= 10 ? parsed : 12;
+};
 
 export const register = async (req, res, next) => {
   try {
@@ -15,6 +21,13 @@ export const register = async (req, res, next) => {
       normalizedPhone = `+233${rawPhone.slice(1)}`;
     }
     req.body.phone = normalizedPhone || req.body.phone;
+
+    const address =
+      typeof req.body.address === "string" ? req.body.address.trim() : "";
+    if (!address) {
+      return next(createError(400, "Address is required!"));
+    }
+    req.body.address = address;
 
     // Check if user already exists by email or phone ONLY (not username)
     const existingUser = await User.findOne({
@@ -35,27 +48,52 @@ export const register = async (req, res, next) => {
       }
     }
 
-    // Hash password and create new user
-    const hash = bcrypt.hashSync(req.body.password, 5);
+    // Hash password and create new user (never accept admin/verify fields from client)
+    const hash = bcrypt.hashSync(req.body.password, bcryptSaltRounds());
+    const {
+      password: _pw,
+      isAdmin: _ia,
+      isVerified: _iv,
+      isBanned: _ib,
+      banReason: _br,
+      verificationStatus: _vs,
+      verificationDocuments: _vd,
+      verificationSubmittedAt: _vsa,
+      adminNotes: _an,
+      ...safeBody
+    } = req.body;
+
     const newUser = new User({
-      ...req.body,
+      ...safeBody,
       phone: req.body.phone,
+      address,
       password: hash,
+      isSeller: Boolean(req.body.isSeller),
+      isEmployer: Boolean(req.body.isEmployer),
+      companyName:
+        typeof req.body.companyName === "string"
+          ? req.body.companyName.trim().slice(0, 120) || undefined
+          : undefined,
+      companyDesc:
+        typeof req.body.companyDesc === "string"
+          ? req.body.companyDesc.trim().slice(0, 1000) || undefined
+          : undefined,
     });
 
     await newUser.save();
 
     // Create welcome notification
-    await Notification.create({
-      user: newUser._id,
-      message: `<p>
-  Welcome to <strong>FarmLink</strong> – your trusted platform for buying and selling fresh farm produce!
-</p>`,
+    await createNotification({
+      userId: newUser._id,
+      type: "welcome",
+      message:
+        "Welcome to WorkPulse Connect — find trusted skilled workers and grow your service business.",
+      link: "/",
     });
 
     // Send registration email if email exists
     if (newUser && newUser.email) {
-      await sendRegisterNotificationEmail(newUser.email, newUser.fullname);
+      await sendRegisterNotificationEmail(newUser.email, newUser.username);
     }
 
     // Return user data without password
@@ -130,23 +168,44 @@ export const login = async (req, res, next) => {
     if (!isCorrect)
       return next(createError(400, "Wrong password or username!"));
 
+    if (user.isBanned) {
+      const reason = user.banReason
+        ? ` This account has been banned: ${user.banReason}`
+        : " This account has been banned.";
+      return next(createError(403, `Login denied.${reason}`));
+    }
+
     const token = jwt.sign(
       {
         id: user._id,
         isSeller: user.isSeller,
+        isEmployer: user.isEmployer,
         isAdmin: user.isAdmin,
         isSuperAdmin: user.isAdmin, // For now, all admins are super admins
       },
       process.env.JWT_KEY
     );
 
+    user.lastLogin = new Date();
+    await user.save({ validateBeforeSave: false });
+
     const { password, ...info } = user._doc;
     res
-      .cookie("accessToken", token, {
-        httpOnly: true,
-      })
+      .cookie("accessToken", token, getAccessTokenCookieOptions())
       .status(200)
-      .json({ message: "Login successful", user: info, token });
+      .json({
+        message: "Login successful",
+        user: {
+          ...info,
+          accountModes: {
+            customer: true,
+            worker: Boolean(user.isSeller),
+            employer: Boolean(user.isEmployer),
+            admin: Boolean(user.isAdmin),
+          },
+        },
+        token,
+      });
   } catch (err) {
     next(err);
   }
@@ -154,10 +213,7 @@ export const login = async (req, res, next) => {
 
 export const logout = async (req, res) => {
   res
-    .clearCookie("accessToken", {
-      sameSite: "none",
-      secure: true,
-    })
+    .clearCookie("accessToken", getAccessTokenCookieOptions())
     .status(200)
-    .send("User has been logged out.");
+    .json({ message: "User has been logged out." });
 };

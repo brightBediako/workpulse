@@ -42,6 +42,24 @@ const userSchema = new Schema(
       type: Boolean,
       default: false,
     },
+    /** Employer / hiring account mode (job posts — Feature 12) */
+    isEmployer: {
+      type: Boolean,
+      default: false,
+      index: true,
+    },
+    companyName: {
+      type: String,
+      required: false,
+      trim: true,
+      maxlength: 120,
+    },
+    companyDesc: {
+      type: String,
+      required: false,
+      trim: true,
+      maxlength: 1000,
+    },
     isAdmin: {
       type: Boolean,
       default: false,
@@ -70,12 +88,90 @@ const userSchema = new Schema(
     verificationDocuments: {
       type: [String],
       required: false,
+      default: [],
+    },
+    verificationSubmittedAt: {
+      type: Date,
+      required: false,
+    },
+    adminNotes: {
+      type: String,
+      required: false,
+    },
+    /** Worker service coverage (beyond home address) */
+    serviceCity: {
+      type: String,
+      required: false,
+      trim: true,
+      index: true,
+    },
+    serviceRegion: {
+      type: String,
+      required: false,
+      trim: true,
+      index: true,
+    },
+    serviceCountry: {
+      type: String,
+      required: false,
+      trim: true,
+      default: "Ghana",
+    },
+    serviceCoordinates: {
+      type: {
+        type: String,
+        enum: ["Point"],
+        required: false,
+      },
+      coordinates: {
+        type: [Number],
+        required: false,
+      },
+    },
+    /** Weekly availability windows for booking cues (sellers) */
+    availability: {
+      type: [
+        {
+          dayOfWeek: {
+            type: Number,
+            required: true,
+            min: 0,
+            max: 6,
+          },
+          startTime: {
+            type: String,
+            required: true,
+            match: /^([01]\d|2[0-3]):[0-5]\d$/,
+          },
+          endTime: {
+            type: String,
+            required: true,
+            match: /^([01]\d|2[0-3]):[0-5]\d$/,
+          },
+        },
+      ],
+      default: [],
+    },
+    availabilityTimezone: {
+      type: String,
+      default: "Africa/Accra",
+    },
+    availabilityNote: {
+      type: String,
+      required: false,
+      maxlength: 500,
+    },
+    availabilityUpdatedAt: {
+      type: Date,
+      required: false,
     },
   },
   {
     timestamps: true,
   }
 );
+
+userSchema.index({ serviceCoordinates: "2dsphere" });
 
 // Ensure unique indexes for email and phone at the database level
 // Username is intentionally not unique to allow multiple users to share the same username.

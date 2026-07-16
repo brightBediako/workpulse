@@ -3,6 +3,8 @@ import Gig from "../models/gig.model.js";
 import Order from "../models/order.model.js";
 import Review from "../models/review.model.js";
 import { createError } from "../middlewares/globalErrHandler.js";
+import { getPlatformFeeRate } from "../utils/orderFees.js";
+import { createNotification } from "../services/notificationService.js";
 
 // Admin Dashboard - Overview stats
 export const getDashboardStats = async (req, res, next) => {
@@ -19,6 +21,7 @@ export const getDashboardStats = async (req, res, next) => {
     const verifiedUsers = await User.countDocuments({ isVerified: true });
     const bannedUsers = await User.countDocuments({ isBanned: true });
     const sellers = await User.countDocuments({ isSeller: true });
+    const employers = await User.countDocuments({ isEmployer: true });
 
     // Gig stats
     const totalGigs = await Gig.countDocuments();
@@ -28,7 +31,7 @@ export const getDashboardStats = async (req, res, next) => {
 
     // Order stats
     const totalOrders = await Order.countDocuments();
-    const completedOrders = await Order.countDocuments({ status: "completed" });
+    const completedOrders = await Order.countDocuments({ isCompleted: true });
     const pendingOrders = await Order.countDocuments({ status: "pending" });
     const disputedOrders = await Order.countDocuments({
       disputeStatus: "open",
@@ -36,14 +39,14 @@ export const getDashboardStats = async (req, res, next) => {
 
     // Revenue stats
     const totalRevenue = await Order.aggregate([
-      { $match: { status: "completed" } },
+      { $match: { isCompleted: true } },
       { $group: { _id: null, total: { $sum: "$price" } } },
     ]);
 
     const monthlyRevenue = await Order.aggregate([
       {
         $match: {
-          status: "completed",
+          isCompleted: true,
           createdAt: { $gte: startOfMonth },
         },
       },
@@ -51,7 +54,7 @@ export const getDashboardStats = async (req, res, next) => {
     ]);
 
     // Platform fee calculation (assuming 10% platform fee)
-    const platformFeeRate = 0.1;
+    const platformFeeRate = getPlatformFeeRate();
     const totalPlatformFees = totalRevenue[0]?.total * platformFeeRate || 0;
     const monthlyPlatformFees = monthlyRevenue[0]?.total * platformFeeRate || 0;
 
@@ -81,6 +84,7 @@ export const getDashboardStats = async (req, res, next) => {
         verifiedUsers,
         bannedUsers,
         sellers,
+        employers,
         totalGigs,
         pendingGigs,
         approvedGigs,
@@ -139,7 +143,7 @@ export const getAnalytics = async (req, res, next) => {
     const revenueGrowth = await Order.aggregate([
       {
         $match: {
-          status: "completed",
+          isCompleted: true,
           createdAt: { $gte: startDate },
         },
       },
@@ -255,8 +259,14 @@ export const getAllUsers = async (req, res, next) => {
     if (status === "banned") filter.isBanned = true;
     if (status === "pending") filter.verificationStatus = "pending";
 
-    if (role === "seller") filter.isSeller = true;
+    if (role === "seller" || role === "worker") filter.isSeller = true;
+    if (role === "employer") filter.isEmployer = true;
     if (role === "admin") filter.isAdmin = true;
+    if (role === "buyer" || role === "customer") {
+      filter.isSeller = false;
+      filter.isEmployer = false;
+      filter.isAdmin = { $ne: true };
+    }
 
     const users = await User.find(filter)
       .select("-password")
@@ -314,18 +324,59 @@ export const getUserById = async (req, res, next) => {
 export const verifyUser = async (req, res, next) => {
   try {
     const { verificationStatus, adminNotes } = req.body;
+    const allowed = ["pending", "verified", "rejected"];
+
+    if (!allowed.includes(verificationStatus)) {
+      return next(
+        createError(
+          400,
+          `verificationStatus must be one of: ${allowed.join(", ")}`
+        )
+      );
+    }
 
     const user = await User.findById(req.params.id);
     if (!user) return next(createError(404, "User not found!"));
 
+    if (
+      verificationStatus === "verified" &&
+      (!user.verificationDocuments || user.verificationDocuments.length === 0)
+    ) {
+      return next(
+        createError(
+          400,
+          "Cannot verify a user with no verification documents on file."
+        )
+      );
+    }
+
     user.verificationStatus = verificationStatus;
     user.isVerified = verificationStatus === "verified";
 
-    if (adminNotes) {
+    if (adminNotes !== undefined) {
       user.adminNotes = adminNotes;
     }
 
     await user.save();
+
+    if (verificationStatus === "verified") {
+      await createNotification({
+        userId: user._id,
+        type: "verification",
+        message:
+          "Your WorkPulse Connect worker account was verified. Customers can trust your profile badge.",
+        link: "/profile",
+      });
+    } else if (verificationStatus === "rejected") {
+      await createNotification({
+        userId: user._id,
+        type: "verification",
+        message: adminNotes
+          ? `Your verification was rejected. ${adminNotes}`
+          : "Your verification was rejected. Update your documents and resubmit.",
+        link: "/profile/verification",
+      });
+    }
 
     res.status(200).json({
       message: `User ${verificationStatus} successfully`,
@@ -333,8 +384,10 @@ export const verifyUser = async (req, res, next) => {
         id: user._id,
         username: user.username,
         email: user.email,
+        isSeller: user.isSeller,
         verificationStatus: user.verificationStatus,
         isVerified: user.isVerified,
+        verificationDocuments: user.verificationDocuments || [],
       },
     });
   } catch (err) {
@@ -397,7 +450,7 @@ export const unbanUser = async (req, res, next) => {
 
 export const updateUser = async (req, res, next) => {
   try {
-    const { username, email, country, phone, desc, isSeller, isAdmin } =
+    const { username, email, country, phone, desc, isSeller, isEmployer, isAdmin } =
       req.body;
 
     const user = await User.findById(req.params.id);
@@ -417,6 +470,7 @@ export const updateUser = async (req, res, next) => {
     if (phone) updateData.phone = phone;
     if (desc !== undefined) updateData.desc = desc;
     if (isSeller !== undefined) updateData.isSeller = isSeller;
+    if (isEmployer !== undefined) updateData.isEmployer = isEmployer;
     if (isAdmin !== undefined) updateData.isAdmin = isAdmin;
 
     const updatedUser = await User.findByIdAndUpdate(
@@ -540,6 +594,13 @@ export const approveGig = async (req, res, next) => {
 
     await gig.save();
 
+    await createNotification({
+      userId: gig.userId,
+      type: "gig_approved",
+      message: `Your listing "${gig.title}" was approved and is now public.`,
+      link: `/gigs/${gig._id}`,
+    });
+
     res.status(200).json({
       message: "Gig approved successfully",
       gig: {
@@ -570,6 +631,16 @@ export const rejectGig = async (req, res, next) => {
     }
 
     await gig.save();
+
+    const reasonText = rejectionReason
+      ? ` Reason: ${rejectionReason}`
+      : "";
+    await createNotification({
+      userId: gig.userId,
+      type: "gig_rejected",
+      message: `Your listing "${gig.title}" was rejected.${reasonText}`,
+      link: `/gigs/${gig._id}`,
+    });
 
     res.status(200).json({
       message: "Gig rejected successfully",
@@ -801,22 +872,22 @@ export const getPaymentStats = async (req, res, next) => {
 
     // Total revenue
     const totalRevenue = await Order.aggregate([
-      { $match: { status: "completed" } },
+      { $match: { isCompleted: true } },
       { $group: { _id: null, total: { $sum: "$price" } } },
     ]);
 
     // Platform fees (assuming 10% platform fee)
-    const platformFeeRate = 0.1;
+    const platformFeeRate = getPlatformFeeRate();
     const totalPlatformFees = totalRevenue[0]?.total * platformFeeRate || 0;
 
     // Seller earnings
     const totalSellerEarnings = await Order.aggregate([
-      { $match: { status: "completed" } },
+      { $match: { isCompleted: true } },
       { $group: { _id: null, total: { $sum: "$sellerEarnings" } } },
     ]);
 
     // Recent transactions
-    const recentTransactions = await Order.find({ status: "completed" })
+    const recentTransactions = await Order.find({ isCompleted: true })
       .populate("buyerId sellerId", "username")
       .populate("gigId", "title")
       .sort({ createdAt: -1 })
@@ -839,7 +910,7 @@ export const getEarningsReport = async (req, res, next) => {
   try {
     const { sellerId, startDate, endDate } = req.query;
 
-    let filter = { status: "completed" };
+    let filter = { isCompleted: true };
 
     if (sellerId) filter.sellerId = sellerId;
     if (startDate && endDate) {
@@ -895,25 +966,14 @@ export const getEarningsReport = async (req, res, next) => {
 };
 
 export const processWithdrawal = async (req, res, next) => {
-  try {
-    const { amount, method, accountDetails } = req.body;
-
-    // This would integrate with payment processors like Stripe Connect
-    // For now, we'll just log the withdrawal request
-
-    res.status(200).json({
-      message: "Withdrawal request processed",
-      withdrawal: {
-        id: req.params.id,
-        amount,
-        method,
-        status: "processed",
-        processedAt: new Date(),
-      },
-    });
-  } catch (err) {
-    next(err);
-  }
+  // Not supported yet — no payout / Stripe Connect integration.
+  // Kept as an admin route so clients get a clear 501 instead of a fake success.
+  return next(
+    createError(
+      501,
+      "Seller withdrawals are not supported yet. Payouts will be added when a payment rail (e.g. Stripe Connect or Paystack) is configured."
+    )
+  );
 };
 
 // Reports
@@ -953,42 +1013,14 @@ export const generateReport = async (req, res, next) => {
 };
 
 export const getSystemLogs = async (req, res, next) => {
-  try {
-    const { page = 1, limit = 50, level } = req.query;
-    const skip = (page - 1) * limit;
-
-    // This would typically come from a logging system
-    // For now, we'll return a mock response
-    const logs = [
-      {
-        id: 1,
-        level: "info",
-        message: "User registered successfully",
-        timestamp: new Date(),
-        userId: "64a1b2c3d4e5f6789012345",
-      },
-      {
-        id: 2,
-        level: "warn",
-        message: "Failed login attempt",
-        timestamp: new Date(),
-        userId: "64a1b2c3d4e5f6789012346",
-      },
-    ];
-
-    res.status(200).json({
-      logs,
-      pagination: {
-        currentPage: parseInt(page),
-        totalPages: 1,
-        totalLogs: logs.length,
-        hasNext: false,
-        hasPrev: false,
-      },
-    });
-  } catch (err) {
-    next(err);
-  }
+  // Not supported yet — no persistent audit/log store.
+  // Returns 501 so clients do not treat mock rows as real ops data.
+  return next(
+    createError(
+      501,
+      "System logs are not available yet. A real audit log store is planned for a later phase."
+    )
+  );
 };
 
 // Helper functions for reports
@@ -1037,7 +1069,7 @@ const generateOrderReport = async (startDate, endDate) => {
 };
 
 const generateRevenueReport = async (startDate, endDate) => {
-  const filter = { status: "completed" };
+  const filter = { isCompleted: true };
   if (startDate && endDate) {
     filter.createdAt = {
       $gte: new Date(startDate),

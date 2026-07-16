@@ -14,10 +14,12 @@
 composer.phar
 
 # Node / Tailwind build toolchain
-/node_modules/
+node_modules/
 npm-debug.log*
 yarn-error.log*
 pnpm-debug.log*
+.next/
+out/
 
 # Runtime storage (keep directory structure via .gitkeep)
 /storage/logs/*

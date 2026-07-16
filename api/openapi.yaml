@@ -1,0 +1,169 @@
+openapi: 3.0.3
+info:
+  title: WorkPulse Connect API
+  version: 1.0.0
+  description: |
+    Express REST API for WorkPulse Connect. Human notes: `API_DOCUMENTATION.md`.
+    Auth: httpOnly cookie `accessToken` or `Authorization: Bearer`.
+    Payments: Stripe Payment Intents + signed webhook.
+servers:
+  - url: http://localhost:8000
+    description: Local
+paths:
+  /healthz:
+    get:
+      summary: Health check
+      responses:
+        "200":
+          description: OK
+  /api/auth/register:
+    post:
+      summary: Register
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [username, email, password, country, address, phone]
+              properties:
+                username: { type: string }
+                email: { type: string }
+                password: { type: string }
+                country: { type: string }
+                address: { type: string }
+                phone: { type: string }
+                isSeller: { type: boolean }
+                isEmployer: { type: boolean }
+      responses:
+        "201": { description: Created }
+  /api/auth/login:
+    post:
+      summary: Login
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [username, password]
+              properties:
+                username: { type: string, description: Username, email, or phone }
+                password: { type: string }
+      responses:
+        "200": { description: Sets accessToken cookie; returns user + token }
+  /api/auth/logout:
+    post:
+      summary: Logout
+      responses:
+        "200": { description: Cookie cleared }
+  /api/categories:
+    get:
+      summary: Gig category taxonomy
+      responses:
+        "200": { description: categories + slugs }
+  /api/gigs:
+    get:
+      summary: List gigs (public = approved)
+      parameters:
+        - in: query
+          name: cat
+          schema: { type: string }
+        - in: query
+          name: city
+          schema: { type: string }
+        - in: query
+          name: search
+          schema: { type: string }
+        - in: query
+          name: userId
+          schema: { type: string }
+      responses:
+        "200": { description: Gig array }
+    post:
+      summary: Create gig (seller)
+      security: [{ cookieAuth: [] }, { bearerAuth: [] }]
+      responses:
+        "201": { description: Created (status pending) }
+  /api/gigs/single/{id}:
+    get:
+      summary: Gig detail
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      responses:
+        "200": { description: Gig }
+  /api/orders/create-payment-intent/{gigId}:
+    post:
+      summary: Create Stripe PaymentIntent + pending order
+      security: [{ cookieAuth: [] }, { bearerAuth: [] }]
+      parameters:
+        - in: path
+          name: gigId
+          required: true
+          schema: { type: string }
+      responses:
+        "200": { description: clientSecret, orderId, payment_intent }
+  /api/orders/webhook:
+    post:
+      summary: Stripe webhook (raw body, signature required)
+      description: Handles payment_intent.succeeded. Requires STRIPE_WEBHOOK_SECRET.
+      responses:
+        "200": { description: received }
+  /api/orders:
+    get:
+      summary: List my orders
+      security: [{ cookieAuth: [] }, { bearerAuth: [] }]
+      responses:
+        "200": { description: Orders }
+    put:
+      summary: Confirm payment (verifies Intent with Stripe)
+      security: [{ cookieAuth: [] }, { bearerAuth: [] }]
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [payment_intent]
+              properties:
+                payment_intent: { type: string }
+      responses:
+        "200": { description: Order paid }
+  /api/jobs:
+    get:
+      summary: List open jobs
+      responses:
+        "200": { description: jobs array }
+    post:
+      summary: Create job (employer)
+      security: [{ cookieAuth: [] }, { bearerAuth: [] }]
+      responses:
+        "201": { description: Created }
+  /api/service-requests:
+    get:
+      summary: Open service request board
+      responses:
+        "200": { description: requests }
+    post:
+      summary: Create service request (customer)
+      security: [{ cookieAuth: [] }, { bearerAuth: [] }]
+      responses:
+        "201": { description: Created }
+  /api/notifications:
+    get:
+      summary: List notifications
+      security: [{ cookieAuth: [] }, { bearerAuth: [] }]
+      responses:
+        "200": { description: notifications + unreadCount }
+components:
+  securitySchemes:
+    cookieAuth:
+      type: apiKey
+      in: cookie
+      name: accessToken
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT

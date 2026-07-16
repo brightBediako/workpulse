@@ -10,7 +10,7 @@ export default function HomePage() {
   return (
     <div className="min-h-screen">
       <MarketplaceNav />
-      <section className="relative w-full min-h-[70vh] md:min-h-[870px] overflow-hidden">
+      <section className="relative w-full min-h-[70vh] md:min-h-[780px] overflow-hidden">
         <div className="absolute inset-0 z-0">
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
@@ -19,10 +19,9 @@ export default function HomePage() {
             className="w-full h-full object-cover"
           />
           <div className="absolute inset-0 hero-gradient" />
-          <div className="absolute inset-0 bg-background/40 md:bg-transparent" />
         </div>
-        <div className="relative z-10 max-w-container mx-auto px-margin-mobile md:px-margin-desktop h-full min-h-[70vh] md:min-h-[870px] flex flex-col justify-center">
-          <div className="max-w-2xl">
+        <div className="relative z-10 max-w-container mx-auto px-margin-mobile md:px-margin-desktop h-full min-h-[70vh] md:min-h-[780px] flex flex-col justify-center">
+          <div className="w-full max-w-2xl">
             <span className="font-label-caps text-primary tracking-widest block mb-sm">
               WorkPulse Connect
             </span>
@@ -30,7 +29,7 @@ export default function HomePage() {
               Find trusted skilled workers
               <br className="hidden md:block" /> in Ghana
             </h1>
-            <p className="font-section-title text-on-surface-variant mb-xl leading-relaxed max-w-xl">
+            <p className="w-full text-[17px] md:text-[18px] leading-7 text-on-surface-variant mb-xl font-normal">
               Connecting Ghanaian households and businesses with verified,
               rated, and capable service professionals for every task.
             </p>

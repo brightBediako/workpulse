@@ -1,35 +1,11 @@
 import mongoose from "mongoose";
 import { GIG_CATEGORY_SLUGS } from "../constants/gigCategories.js";
-import { DEFAULT_COUNTRY } from "../constants/ghanaLocations.js";
+import {
+  LocationSchema,
+  stripInvalidLocationGeo,
+} from "./location.schema.js";
 
 const { Schema } = mongoose;
-
-const LocationSchema = new Schema(
-  {
-    city: { type: String, required: false, trim: true, index: true },
-    region: { type: String, required: false, trim: true, index: true },
-    area: { type: String, required: false, trim: true },
-    country: {
-      type: String,
-      required: false,
-      trim: true,
-      default: DEFAULT_COUNTRY,
-      index: true,
-    },
-    coordinates: {
-      type: {
-        type: String,
-        enum: ["Point"],
-        required: false,
-      },
-      coordinates: {
-        type: [Number],
-        required: false,
-      },
-    },
-  },
-  { _id: false }
-);
 
 const GigSchema = new Schema(
   {
@@ -125,6 +101,7 @@ const GigSchema = new Schema(
   }
 );
 
+GigSchema.pre("validate", stripInvalidLocationGeo);
 GigSchema.index({ "location.coordinates": "2dsphere" });
 GigSchema.index({ "location.city": 1, cat: 1, status: 1 });
 

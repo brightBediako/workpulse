@@ -61,10 +61,20 @@ export const createGig = async (req, res, next) => {
     return next(err);
   }
 
+  // Do not spread raw body — clients may send empty GeoJSON that breaks 2dsphere
   const payload = {
     userId: req.userId,
-    ...req.body,
+    title: req.body.title,
+    desc: req.body.desc,
     cat: catSlug,
+    price: req.body.price,
+    cover: req.body.cover,
+    images: req.body.images,
+    shortTitle: req.body.shortTitle,
+    shortDesc: req.body.shortDesc,
+    deliveryTime: req.body.deliveryTime,
+    revisionNumber: req.body.revisionNumber,
+    features: req.body.features,
   };
   if (location) {
     payload.location = location;
@@ -125,6 +135,8 @@ export const updateGig = async (req, res, next) => {
         const location = applyLocationFromBody(updates);
         if (location) {
           updates.location = location;
+        } else {
+          delete updates.location;
         }
       } catch (err) {
         return next(err);

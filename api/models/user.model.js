@@ -121,11 +121,10 @@ const userSchema = new Schema(
       type: {
         type: String,
         enum: ["Point"],
-        required: false,
       },
       coordinates: {
         type: [Number],
-        required: false,
+        default: undefined,
       },
     },
     /** Weekly availability windows for booking cues (sellers) */
@@ -170,6 +169,21 @@ const userSchema = new Schema(
     timestamps: true,
   }
 );
+
+userSchema.pre("validate", function (next) {
+  const geo = this.serviceCoordinates;
+  if (
+    geo &&
+    (geo.type !== "Point" ||
+      !Array.isArray(geo.coordinates) ||
+      geo.coordinates.length !== 2 ||
+      !Number.isFinite(Number(geo.coordinates[0])) ||
+      !Number.isFinite(Number(geo.coordinates[1])))
+  ) {
+    this.serviceCoordinates = undefined;
+  }
+  next();
+});
 
 userSchema.index({ serviceCoordinates: "2dsphere" });
 

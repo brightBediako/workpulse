@@ -1,35 +1,11 @@
 import mongoose from "mongoose";
 import { GIG_CATEGORY_SLUGS } from "../constants/gigCategories.js";
-import { DEFAULT_COUNTRY } from "../constants/ghanaLocations.js";
+import {
+  LocationSchema,
+  stripInvalidLocationGeo,
+} from "./location.schema.js";
 
 const { Schema } = mongoose;
-
-const LocationSchema = new Schema(
-  {
-    city: { type: String, required: false, trim: true, index: true },
-    region: { type: String, required: false, trim: true, index: true },
-    area: { type: String, required: false, trim: true },
-    country: {
-      type: String,
-      required: false,
-      trim: true,
-      default: DEFAULT_COUNTRY,
-      index: true,
-    },
-    coordinates: {
-      type: {
-        type: String,
-        enum: ["Point"],
-        required: false,
-      },
-      coordinates: {
-        type: [Number],
-        required: false,
-      },
-    },
-  },
-  { _id: false }
-);
 
 const JobSchema = new Schema(
   {
@@ -107,6 +83,7 @@ const JobSchema = new Schema(
   { timestamps: true }
 );
 
+JobSchema.pre("validate", stripInvalidLocationGeo);
 JobSchema.index({ "location.coordinates": "2dsphere" });
 JobSchema.index({ status: 1, cat: 1, createdAt: -1 });
 JobSchema.index({ employerId: 1, createdAt: -1 });

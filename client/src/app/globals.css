@@ -62,15 +62,25 @@
   --radius-xl: 0.75rem;
   --radius-card: 0.75rem;
 
-  --spacing-xs: 4px;
-  --spacing-sm: 8px;
-  --spacing-md: 16px;
-  --spacing-lg: 24px;
-  --spacing-xl: 40px;
+  /* Layout spacing (padding/gap/margin). Named away from sm/md/lg/xl
+     so Tailwind v4 max-w-xl does not resolve to 40px. */
+  --spacing-pf-xs: 4px;
+  --spacing-pf-sm: 8px;
+  --spacing-pf-md: 16px;
+  --spacing-pf-lg: 24px;
+  --spacing-pf-xl: 40px;
   --spacing-margin-mobile: 16px;
   --spacing-margin-desktop: 32px;
   --spacing-gutter: 16px;
-  --container-max: 1280px;
+
+  /* Restore max-width scale (explicit — prevents spacing collisions) */
+  --container-sm: 24rem;
+  --container-md: 28rem;
+  --container-lg: 32rem;
+  --container-xl: 36rem;
+  --container-2xl: 42rem;
+  --container-3xl: 48rem;
+  --container-page: 80rem;
 }
 
 html {
@@ -133,12 +143,58 @@ body {
 .hero-gradient {
   background: linear-gradient(
     90deg,
-    rgba(244, 251, 246, 1) 30%,
-    rgba(244, 251, 246, 0.8) 50%,
+    rgba(244, 251, 246, 0.97) 0%,
+    rgba(244, 251, 246, 0.85) 36%,
+    rgba(244, 251, 246, 0.4) 58%,
     rgba(244, 251, 246, 0) 100%
   );
 }
 
 .max-w-container {
-  max-width: var(--container-max);
+  max-width: var(--container-page);
+}
+
+/* Compat aliases for older spacing class names used across pages */
+@utility mb-xs { margin-bottom: var(--spacing-pf-xs); }
+@utility mb-sm { margin-bottom: var(--spacing-pf-sm); }
+@utility mb-md { margin-bottom: var(--spacing-pf-md); }
+@utility mb-lg { margin-bottom: var(--spacing-pf-lg); }
+@utility mb-xl { margin-bottom: var(--spacing-pf-xl); }
+@utility mt-xs { margin-top: var(--spacing-pf-xs); }
+@utility mt-sm { margin-top: var(--spacing-pf-sm); }
+@utility mt-lg { margin-top: var(--spacing-pf-lg); }
+@utility gap-sm { gap: var(--spacing-pf-sm); }
+@utility gap-md { gap: var(--spacing-pf-md); }
+@utility gap-lg { gap: var(--spacing-pf-lg); }
+@utility gap-xl { gap: var(--spacing-pf-xl); }
+@utility p-md { padding: var(--spacing-pf-md); }
+@utility p-lg { padding: var(--spacing-pf-lg); }
+@utility p-xl { padding: var(--spacing-pf-xl); }
+@utility px-md { padding-inline: var(--spacing-pf-md); }
+@utility px-lg { padding-inline: var(--spacing-pf-lg); }
+@utility py-sm { padding-block: var(--spacing-pf-sm); }
+@utility py-md { padding-block: var(--spacing-pf-md); }
+@utility py-lg { padding-block: var(--spacing-pf-lg); }
+@utility py-xl { padding-block: var(--spacing-pf-xl); }
+@utility pt-sm { padding-top: var(--spacing-pf-sm); }
+@utility pl-md { padding-left: var(--spacing-pf-md); }
+@utility space-y-xs {
+  :where(& > :not(:last-child)) {
+    margin-bottom: var(--spacing-pf-xs);
+  }
+}
+@utility space-y-sm {
+  :where(& > :not(:last-child)) {
+    margin-bottom: var(--spacing-pf-sm);
+  }
+}
+@utility space-y-md {
+  :where(& > :not(:last-child)) {
+    margin-bottom: var(--spacing-pf-md);
+  }
+}
+@utility space-y-lg {
+  :where(& > :not(:last-child)) {
+    margin-bottom: var(--spacing-pf-lg);
+  }
 }

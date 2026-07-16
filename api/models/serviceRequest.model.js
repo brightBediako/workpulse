@@ -1,35 +1,11 @@
 import mongoose from "mongoose";
 import { GIG_CATEGORY_SLUGS } from "../constants/gigCategories.js";
-import { DEFAULT_COUNTRY } from "../constants/ghanaLocations.js";
+import {
+  LocationSchema,
+  stripInvalidLocationGeo,
+} from "./location.schema.js";
 
 const { Schema } = mongoose;
-
-const LocationSchema = new Schema(
-  {
-    city: { type: String, required: false, trim: true, index: true },
-    region: { type: String, required: false, trim: true, index: true },
-    area: { type: String, required: false, trim: true },
-    country: {
-      type: String,
-      required: false,
-      trim: true,
-      default: DEFAULT_COUNTRY,
-      index: true,
-    },
-    coordinates: {
-      type: {
-        type: String,
-        enum: ["Point"],
-        required: false,
-      },
-      coordinates: {
-        type: [Number],
-        required: false,
-      },
-    },
-  },
-  { _id: false }
-);
 
 /**
  * Customer demand-side request (alongside seller gigs).
@@ -120,6 +96,7 @@ const ServiceRequestSchema = new Schema(
   { timestamps: true }
 );
 
+ServiceRequestSchema.pre("validate", stripInvalidLocationGeo);
 ServiceRequestSchema.index({ "location.coordinates": "2dsphere" });
 ServiceRequestSchema.index({ status: 1, cat: 1, createdAt: -1 });
 ServiceRequestSchema.index({ customerId: 1, createdAt: -1 });

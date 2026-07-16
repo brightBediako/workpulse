@@ -8,6 +8,7 @@ import {
   locationTextFilter,
   parseLocationInput,
 } from "../utils/location.js";
+import { normalizeCoverUrl } from "../utils/coverUrl.js";
 import jwt from "jsonwebtoken";
 
 const invalidCategoryError = () =>
@@ -61,6 +62,13 @@ export const createGig = async (req, res, next) => {
     return next(err);
   }
 
+  let cover;
+  try {
+    cover = normalizeCoverUrl(req.body.cover, { required: true });
+  } catch (err) {
+    return next(err);
+  }
+
   // Do not spread raw body — clients may send empty GeoJSON that breaks 2dsphere
   const payload = {
     userId: req.userId,
@@ -68,7 +76,7 @@ export const createGig = async (req, res, next) => {
     desc: req.body.desc,
     cat: catSlug,
     price: req.body.price,
-    cover: req.body.cover,
+    cover,
     images: req.body.images,
     shortTitle: req.body.shortTitle,
     shortDesc: req.body.shortDesc,
@@ -106,6 +114,61 @@ export const deleteGig = async (req, res, next) => {
   }
 };
 
+/** PUT /api/gigs/:id/suspend — owner pauses listing */
+export const suspendOwnGig = async (req, res, next) => {
+  try {
+    const gig = await Gig.findById(req.params.id);
+    if (!gig) return next(createError(404, "Gig not found!"));
+    if (String(gig.userId) !== String(req.userId)) {
+      return next(createError(403, "You can suspend only your gigs!"));
+    }
+    if (gig.status === "suspended") {
+      return next(createError(400, "Gig is already suspended."));
+    }
+    if (gig.status === "rejected") {
+      return next(createError(400, "Rejected gigs cannot be suspended."));
+    }
+
+    gig.status = "suspended";
+    if (typeof req.body?.reason === "string" && req.body.reason.trim()) {
+      gig.rejectionReason = req.body.reason.trim().slice(0, 500);
+    }
+    await gig.save();
+
+    res.status(200).json({
+      message: "Gig suspended. It is hidden from the marketplace.",
+      gig,
+    });
+  } catch (err) {
+    next(err);
+  }
+};
+
+/** PUT /api/gigs/:id/resume — owner re-submits suspended listing for approval */
+export const resumeOwnGig = async (req, res, next) => {
+  try {
+    const gig = await Gig.findById(req.params.id);
+    if (!gig) return next(createError(404, "Gig not found!"));
+    if (String(gig.userId) !== String(req.userId)) {
+      return next(createError(403, "You can resume only your gigs!"));
+    }
+    if (gig.status !== "suspended") {
+      return next(createError(400, "Only suspended gigs can be resumed."));
+    }
+
+    gig.status = "pending";
+    gig.rejectionReason = undefined;
+    await gig.save();
+
+    res.status(200).json({
+      message: "Gig re-submitted for admin approval.",
+      gig,
+    });
+  } catch (err) {
+    next(err);
+  }
+};
+
 export const updateGig = async (req, res, next) => {
   try {
     const gig = await Gig.findById(req.params.id);
@@ -114,6 +177,7 @@ export const updateGig = async (req, res, next) => {
       return next(createError(403, "You can update only your gigs!"));
     }
 
+    const wasApproved = gig.status === "approved";
     const updates = { ...req.body };
     if (updates.cat !== undefined) {
       const catSlug = normalizeCategorySlug(updates.cat);
@@ -162,6 +226,21 @@ export const updateGig = async (req, res, next) => {
     delete updates.totalStars;
     delete updates.starNumber;
     delete updates.userId;
+
+    if (updates.cover !== undefined) {
+      try {
+        updates.cover = normalizeCoverUrl(updates.cover, { required: true });
+      } catch (err) {
+        return next(err);
+      }
+    }
+
+    // Content changes on a live gig need re-approval
+    if (wasApproved || gig.status === "suspended") {
+      updates.status = "pending";
+      updates.approvedBy = undefined;
+      updates.approvedAt = undefined;
+    }
 
     const updatedGig = await Gig.findByIdAndUpdate(
       req.params.id,

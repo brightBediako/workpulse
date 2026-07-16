@@ -1,5 +1,6 @@
 import User from "../models/user.model.js";
 import Gig from "../models/gig.model.js";
+import Order from "../models/order.model.js";
 import { createError } from "../middlewares/globalErrHandler.js";
 import { normalizeCategorySlug } from "../constants/gigCategories.js";
 import {
@@ -28,6 +29,11 @@ const PRIVILEGED_USER_FIELDS = [
   "availabilityTimezone",
   "availabilityNote",
   "availabilityUpdatedAt",
+  "payoutMethod",
+  "payoutProvider",
+  "payoutAccountName",
+  "payoutAccountNumber",
+  "payoutUpdatedAt",
 ];
 
 const accountModes = (user) => ({
@@ -49,10 +55,12 @@ const signAccessToken = (user) =>
     process.env.JWT_KEY
   );
 
-const isHttpUrl = (value) => {
+const isDocumentUrl = (value) => {
   if (typeof value !== "string") return false;
+  const trimmed = value.trim();
+  if (trimmed.startsWith("/uploads/")) return true;
   try {
-    const parsed = new URL(value.trim());
+    const parsed = new URL(trimmed);
     return parsed.protocol === "http:" || parsed.protocol === "https:";
   } catch {
     return false;
@@ -80,6 +88,13 @@ const publicUserView = (userDoc, { includeDocuments = false } = {}) => {
     companyDesc: rest.companyDesc || null,
     accountModes: modes,
   };
+  const payoutPayload = {
+    payoutMethod: rest.payoutMethod || "none",
+    payoutProvider: rest.payoutProvider || null,
+    payoutAccountName: rest.payoutAccountName || null,
+    payoutAccountNumber: rest.payoutAccountNumber || null,
+    payoutUpdatedAt: rest.payoutUpdatedAt || null,
+  };
 
   if (includeDocuments) {
     return {
@@ -88,6 +103,7 @@ const publicUserView = (userDoc, { includeDocuments = false } = {}) => {
       adminNotes,
       ...availabilityPayload,
       ...employerPayload,
+      ...payoutPayload,
     };
   }
   return {
@@ -97,6 +113,18 @@ const publicUserView = (userDoc, { includeDocuments = false } = {}) => {
     ...availabilityPayload,
     ...employerPayload,
   };
+};
+
+/** GET /api/users/me — own full profile */
+export const getMe = async (req, res, next) => {
+  try {
+    const user = await User.findById(req.userId);
+    if (!user) return next(createError(404, "User not found!"));
+    const { password, ...info } = user._doc;
+    res.status(200).json(publicUserView(info, { includeDocuments: true }));
+  } catch (err) {
+    next(err);
+  }
 };
 
 // get user
@@ -200,12 +228,13 @@ export const deleteUser = async (req, res, next) => {
 export const getMyVerification = async (req, res, next) => {
   try {
     const user = await User.findById(req.userId).select(
-      "username isSeller isVerified verificationStatus verificationDocuments verificationSubmittedAt adminNotes"
+      "username isSeller isEmployer isVerified verificationStatus verificationDocuments verificationSubmittedAt adminNotes"
     );
     if (!user) return next(createError(404, "User not found!"));
 
     res.status(200).json({
       isSeller: user.isSeller,
+      isEmployer: user.isEmployer,
       isVerified: user.isVerified,
       verificationStatus: user.verificationStatus,
       verificationDocuments: user.verificationDocuments || [],
@@ -220,19 +249,19 @@ export const getMyVerification = async (req, res, next) => {
 
 /**
  * PUT /api/users/me/verification
- * Seller submits document URLs for admin review.
- * Body: { "documents": ["https://…", …] }
+ * Worker or employer submits document URLs for admin review.
+ * Body: { "documents": ["https://…", "/uploads/…", …] }
  */
 export const submitVerification = async (req, res, next) => {
   try {
     const user = await User.findById(req.userId);
     if (!user) return next(createError(404, "User not found!"));
 
-    if (!user.isSeller) {
+    if (!user.isSeller && !user.isEmployer) {
       return next(
         createError(
           403,
-          "Only sellers (workers) can submit verification documents. Enable seller mode on your profile first."
+          "Only workers or employers can submit verification documents."
         )
       );
     }
@@ -246,7 +275,7 @@ export const submitVerification = async (req, res, next) => {
     const rawDocs = req.body.documents ?? req.body.verificationDocuments;
     if (!Array.isArray(rawDocs) || rawDocs.length === 0) {
       return next(
-        createError(400, "Provide a non-empty documents array of HTTPS URLs.")
+        createError(400, "Provide a non-empty documents array of HTTPS or /uploads URLs.")
       );
     }
 
@@ -262,9 +291,9 @@ export const submitVerification = async (req, res, next) => {
       ),
     ];
 
-    if (documents.length === 0 || !documents.every(isHttpUrl)) {
+    if (documents.length === 0 || !documents.every(isDocumentUrl)) {
       return next(
-        createError(400, "Each document must be a valid http(s) URL.")
+        createError(400, "Each document must be a valid http(s) or /uploads URL.")
       );
     }
 
@@ -280,6 +309,196 @@ export const submitVerification = async (req, res, next) => {
       isVerified: user.isVerified,
       verificationDocuments: user.verificationDocuments,
       verificationSubmittedAt: user.verificationSubmittedAt,
+    });
+  } catch (err) {
+    next(err);
+  }
+};
+
+/**
+ * POST /api/users/me/verification/upload
+ * Multipart file upload; returns public URLs to include in verification submit.
+ */
+export const uploadVerificationDocuments = async (req, res, next) => {
+  try {
+    const user = await User.findById(req.userId);
+    if (!user) return next(createError(404, "User not found!"));
+
+    if (!user.isSeller && !user.isEmployer) {
+      return next(
+        createError(
+          403,
+          "Only workers or employers can upload verification documents."
+        )
+      );
+    }
+
+    const files = req.files || [];
+    if (!files.length) {
+      return next(createError(400, "Attach at least one file (PDF, PNG, JPG, WEBP)."));
+    }
+
+    const urls = files.map((f) => `/uploads/verification/${f.filename}`);
+
+    res.status(201).json({
+      message: "Files uploaded. Submit them for admin review.",
+      documents: urls,
+    });
+  } catch (err) {
+    next(err);
+  }
+};
+
+/** GET /api/users/me/payout — payout destination */
+export const getMyPayout = async (req, res, next) => {
+  try {
+    const user = await User.findById(req.userId).select(
+      "isSeller isEmployer payoutMethod payoutProvider payoutAccountName payoutAccountNumber payoutUpdatedAt"
+    );
+    if (!user) return next(createError(404, "User not found!"));
+
+    if (!user.isSeller && !user.isEmployer) {
+      return next(
+        createError(403, "Only workers or employers can manage payout settings.")
+      );
+    }
+
+    res.status(200).json({
+      payoutMethod: user.payoutMethod || "none",
+      payoutProvider: user.payoutProvider || null,
+      payoutAccountName: user.payoutAccountName || null,
+      payoutAccountNumber: user.payoutAccountNumber || null,
+      payoutUpdatedAt: user.payoutUpdatedAt || null,
+    });
+  } catch (err) {
+    next(err);
+  }
+};
+
+/**
+ * PUT /api/users/me/payout
+ * Body: { payoutMethod, payoutProvider?, payoutAccountName?, payoutAccountNumber? }
+ */
+export const setMyPayout = async (req, res, next) => {
+  try {
+    const user = await User.findById(req.userId);
+    if (!user) return next(createError(404, "User not found!"));
+
+    if (!user.isSeller && !user.isEmployer) {
+      return next(
+        createError(403, "Only workers or employers can manage payout settings.")
+      );
+    }
+
+    const method = req.body.payoutMethod;
+    const allowed = ["none", "mobile_money", "bank"];
+    if (!allowed.includes(method)) {
+      return next(
+        createError(400, `payoutMethod must be one of: ${allowed.join(", ")}`)
+      );
+    }
+
+    if (method === "none") {
+      user.payoutMethod = "none";
+      user.payoutProvider = undefined;
+      user.payoutAccountName = undefined;
+      user.payoutAccountNumber = undefined;
+      user.payoutUpdatedAt = new Date();
+      await user.save();
+      return res.status(200).json({
+        message: "Payout method cleared.",
+        payoutMethod: "none",
+        payoutProvider: null,
+        payoutAccountName: null,
+        payoutAccountNumber: null,
+        payoutUpdatedAt: user.payoutUpdatedAt,
+      });
+    }
+
+    const provider =
+      typeof req.body.payoutProvider === "string"
+        ? req.body.payoutProvider.trim().slice(0, 80)
+        : "";
+    const accountName =
+      typeof req.body.payoutAccountName === "string"
+        ? req.body.payoutAccountName.trim().slice(0, 120)
+        : "";
+    const accountNumber =
+      typeof req.body.payoutAccountNumber === "string"
+        ? req.body.payoutAccountNumber.trim().slice(0, 40)
+        : "";
+
+    if (!provider || !accountName || !accountNumber) {
+      return next(
+        createError(
+          400,
+          "payoutProvider, payoutAccountName, and payoutAccountNumber are required."
+        )
+      );
+    }
+
+    user.payoutMethod = method;
+    user.payoutProvider = provider;
+    user.payoutAccountName = accountName;
+    user.payoutAccountNumber = accountNumber;
+    user.payoutUpdatedAt = new Date();
+    await user.save();
+
+    res.status(200).json({
+      message: "Payout settings saved.",
+      payoutMethod: user.payoutMethod,
+      payoutProvider: user.payoutProvider,
+      payoutAccountName: user.payoutAccountName,
+      payoutAccountNumber: user.payoutAccountNumber,
+      payoutUpdatedAt: user.payoutUpdatedAt,
+    });
+  } catch (err) {
+    next(err);
+  }
+};
+
+/** GET /api/users/me/earnings — worker earnings from completed orders */
+export const getMyEarnings = async (req, res, next) => {
+  try {
+    const user = await User.findById(req.userId).select("isSeller username");
+    if (!user) return next(createError(404, "User not found!"));
+
+    if (!user.isSeller) {
+      return next(
+        createError(403, "Only workers can view marketplace earnings.")
+      );
+    }
+
+    const sellerId = String(req.userId);
+    const completed = await Order.find({
+      sellerId,
+      isCompleted: true,
+    })
+      .select("title price platformFee sellerEarnings status createdAt updatedAt")
+      .sort({ createdAt: -1 })
+      .limit(50);
+
+    const summary = await Order.aggregate([
+      { $match: { sellerId, isCompleted: true } },
+      {
+        $group: {
+          _id: null,
+          totalEarnings: { $sum: "$sellerEarnings" },
+          totalGross: { $sum: "$price" },
+          totalPlatformFees: { $sum: "$platformFee" },
+          completedOrders: { $sum: 1 },
+        },
+      },
+    ]);
+
+    const s = summary[0] || {};
+    res.status(200).json({
+      totalEarnings: s.totalEarnings || 0,
+      totalGross: s.totalGross || 0,
+      totalPlatformFees: s.totalPlatformFees || 0,
+      completedOrders: s.completedOrders || 0,
+      currency: "GHS",
+      recentOrders: completed,
     });
   } catch (err) {
     next(err);

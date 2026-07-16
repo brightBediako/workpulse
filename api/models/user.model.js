@@ -164,6 +164,34 @@ const userSchema = new Schema(
       type: Date,
       required: false,
     },
+    /** Payout destination for worker/employer withdrawals (manual until Stripe Connect) */
+    payoutMethod: {
+      type: String,
+      enum: ["none", "mobile_money", "bank"],
+      default: "none",
+    },
+    payoutProvider: {
+      type: String,
+      required: false,
+      trim: true,
+      maxlength: 80,
+    },
+    payoutAccountName: {
+      type: String,
+      required: false,
+      trim: true,
+      maxlength: 120,
+    },
+    payoutAccountNumber: {
+      type: String,
+      required: false,
+      trim: true,
+      maxlength: 40,
+    },
+    payoutUpdatedAt: {
+      type: Date,
+      required: false,
+    },
   },
   {
     timestamps: true,

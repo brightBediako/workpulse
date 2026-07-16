@@ -6,9 +6,16 @@ import Link from "next/link";
 import { MarketplaceNav } from "@/components/layout/MarketplaceNav";
 import { Button } from "@/components/ui/Button";
 import { StatusChip } from "@/components/ui/StatusChip";
-import { api, ApiError } from "@/lib/api";
+import { api, ApiError, getApiUrl } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import type { Gig } from "@/lib/types";
+
+function mediaUrl(url?: string) {
+  if (!url) return "";
+  if (url.startsWith("http://") || url.startsWith("https://")) return url;
+  if (url.startsWith("/")) return `${getApiUrl()}${url}`;
+  return url;
+}
 
 export default function GigDetailPage() {
   const { id } = useParams<{ id: string }>();
@@ -68,7 +75,7 @@ export default function GigDetailPage() {
               <div className="rounded-card overflow-hidden border border-outline-variant bg-surface-container aspect-[16/10]">
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img
-                  src={gig.cover}
+                  src={mediaUrl(gig.cover)}
                   alt={gig.title}
                   className="w-full h-full object-cover"
                 />

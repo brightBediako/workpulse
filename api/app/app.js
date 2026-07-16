@@ -1,5 +1,7 @@
 import express from "express";
 import dotenv from "dotenv";
+import path from "path";
+import { fileURLToPath } from "url";
 
 import authRoute from "../routes/auth.route.js";
 import userRoute from "../routes/user.route.js";
@@ -15,17 +17,22 @@ import categoryRoute from "../routes/category.route.js";
 import locationRoute from "../routes/location.route.js";
 import jobRoute from "../routes/job.route.js";
 import serviceRequestRoute from "../routes/serviceRequest.route.js";
+import uploadRoute from "../routes/upload.route.js";
 
 import cors from "cors";
 import cookieParser from "cookie-parser";
 
 import dbConnect from "../config/dbConnect.js";
 import { globalErrhandler, notFound } from "../middlewares/globalErrHandler.js";
+import { ensureUploadDirs } from "../utils/uploads.js";
 
 dotenv.config();
 //db connect
 dbConnect();
+ensureUploadDirs();
 const app = express();
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const uploadsRoot = path.join(__dirname, "..", "uploads");
 
 //cors configuration
 const corsOptions = {
@@ -112,6 +119,7 @@ app.post(
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(cookieParser());
+app.use("/uploads", express.static(uploadsRoot));
 
 // Health checks (avoid wildcard routes for Express 5 compatibility)
 app.get("/", (req, res) => {
@@ -130,6 +138,7 @@ app.use("/api/categories", categoryRoute);
 app.use("/api/locations", locationRoute);
 app.use("/api/jobs", jobRoute);
 app.use("/api/service-requests", serviceRequestRoute);
+app.use("/api/uploads", uploadRoute);
 app.use("/api/orders", orderRoute);
 app.use("/api/conversations", conversationRoute);
 app.use("/api/messages", messageRoute);

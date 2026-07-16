@@ -365,7 +365,7 @@ export const verifyUser = async (req, res, next) => {
         type: "verification",
         message:
           "Your WorkPulse Connect worker account was verified. Customers can trust your profile badge.",
-        link: "/profile",
+        link: "/account",
       });
     } else if (verificationStatus === "rejected") {
       await createNotification({
@@ -374,7 +374,7 @@ export const verifyUser = async (req, res, next) => {
         message: adminNotes
           ? `Your verification was rejected. ${adminNotes}`
           : "Your verification was rejected. Update your documents and resubmit.",
-        link: "/profile/verification",
+        link: "/account",
       });
     }
 

@@ -26,6 +26,13 @@ const JobSchema = new Schema(
       trim: true,
       maxlength: 5000,
     },
+    /** Optional cover image (http(s) URL or /uploads/covers/…) */
+    cover: {
+      type: String,
+      required: false,
+      trim: true,
+      maxlength: 2048,
+    },
     cat: {
       type: String,
       required: true,
@@ -65,7 +72,7 @@ const JobSchema = new Schema(
     },
     status: {
       type: String,
-      enum: ["open", "closed", "filled", "cancelled"],
+      enum: ["open", "closed", "filled", "cancelled", "suspended"],
       default: "open",
       index: true,
     },

@@ -112,8 +112,13 @@ Mount: `/api/users`
 
 | Method | Path | Auth | Notes |
 | ------ | ---- | ---- | ----- |
+| GET | `/me` | JWT | Own full profile (incl. docs + payout) |
 | GET | `/me/verification` | JWT | Own verification status + document URLs |
-| PUT | `/me/verification` | JWT | Seller submits doc URLs for review |
+| PUT | `/me/verification` | JWT | Worker/employer submits doc URLs for review |
+| POST | `/me/verification/upload` | JWT | Multipart upload (PDF/PNG/JPG/WEBP) → `/uploads/…` URLs |
+| GET | `/me/payout` | JWT | Payout destination (MoMo / bank) |
+| PUT | `/me/payout` | JWT | Save payout method + account details |
+| GET | `/me/earnings` | JWT seller | Net earnings + recent completed orders |
 | GET | `/me/employer` | JWT | Own employer mode + company profile |
 | PUT | `/me/employer` | JWT | Enable/disable employer mode; refresh JWT cookie |
 | GET | `/:id` | — | Public profile (no password; docs hidden) |
@@ -146,7 +151,15 @@ Hiring identity for job posts (Feature 12). Independent of `isSeller` and of buy
 
 ### Submit worker verification
 
-`PUT /api/users/me/verification` (seller / `isSeller: true`)
+`PUT /api/users/me/verification` (worker `isSeller` or employer `isEmployer`)
+
+Body: `{ "documents": ["https://…", "/uploads/verification/…"] }` (1–10 URLs). Sets `verificationStatus` to `pending`. Admins approve via `PUT /api/admin/users/:id/verify`.
+
+`POST /api/users/me/verification/upload` — multipart field `documents` (up to 5 files). Returns `{ documents: ["/uploads/verification/…"] }`.
+
+`PUT /api/users/me/payout` — `{ payoutMethod: "mobile_money"|"bank"|"none", payoutProvider?, payoutAccountName?, payoutAccountNumber? }`.
+
+`GET /api/users/me/earnings` — worker-only summary: `totalEarnings`, `totalGross`, `totalPlatformFees`, `completedOrders`, `recentOrders`.
 
 ```json
 {
@@ -157,7 +170,7 @@ Hiring identity for job posts (Feature 12). Independent of `isSeller` and of buy
 }
 ```
 
-- 1–10 `http(s)` URLs  
+- 1–10 `http(s)` or `/uploads/…` URLs  
 - Sets `verificationStatus: "pending"`, `isVerified: false`, stores `verificationDocuments`  
 - Already-verified accounts cannot resubmit via this route  
 
@@ -193,8 +206,12 @@ New gigs default `status: "pending"`. Public list returns **approved** only (non
 | POST | `/` | JWT + `isSeller` | Create; validates `cat`; optional location |
 | GET | `/` | — | Query: `cat`, `city`, `region`, `country`, `lat`, `lng`, `radiusKm`, `userId`, `min`, `max`, `search`, `sort` |
 | GET | `/single/:id` | — | Single gig |
-| PUT | `/:id` | JWT | Owner only |
+| PUT | `/:id` | JWT | Owner update (approved → pending for re-review) |
+| PUT | `/:id/suspend` | JWT | Owner pauses listing |
+| PUT | `/:id/resume` | JWT | Owner re-submits suspended → pending |
 | DELETE | `/:id` | JWT | Owner only |
+
+**Cover image:** required. Pass an `http(s)` URL or upload via `POST /api/uploads/cover` (multipart field `cover`) and store the returned `/uploads/covers/…` path.
 
 ### Categories taxonomy
 
@@ -449,14 +466,17 @@ Employer job posts (Feature 11 `isEmployer`) and worker applications (`isSeller`
 | GET | `/` | — | Public list (default `status=open`); filters `cat`, `city`, `region`, `country`, `employmentType`, `employerId`, `status`, `limit` |
 | GET | `/mine` | JWT + employer | Own posts |
 | GET | `/:id` | — | Single job |
-| PUT | `/:id` | JWT + employer | Update details / `status` open\|closed\|cancelled |
+| PUT | `/:id` | JWT + employer | Update details / `status` open\|closed\|cancelled\|suspended |
 | DELETE | `/:id` | JWT + employer | Soft-cancel (`status: cancelled`) |
+
+Optional `cover`: http(s) URL or `/uploads/covers/…` from `POST /api/uploads/cover`.
 
 ```json
 {
   "title": "Site electrician — 2 weeks",
   "description": "Wiring for a small site in East Legon.",
   "cat": "electrical",
+  "cover": "/uploads/covers/example.jpg",
   "city": "Accra",
   "region": "Greater Accra",
   "budgetMin": 800,
@@ -469,7 +489,7 @@ Employer job posts (Feature 11 `isEmployer`) and worker applications (`isSeller`
 
 `employmentType`: `one_time` | `short_term` | `contract` | `full_time`. Category slugs match `GET /api/categories`.
 
-Job `status`: `open` → `filled` (when accepted applicants reach `positions`) | `closed` | `cancelled`.
+Job `status`: `open` → `filled` (when accepted applicants reach `positions`) | `closed` | `suspended` | `cancelled`.
 
 ### Applications
 
@@ -562,6 +582,12 @@ Common status codes: `400` validation · `401` unauthenticated · `403` forbidde
 GET  / | /healthz
 GET  /api/categories
 GET  /api/locations
+POST /api/uploads/cover
+GET  /api/users/me
+GET|PUT /api/users/me/verification
+POST /api/users/me/verification/upload
+GET|PUT /api/users/me/payout
+GET  /api/users/me/earnings
 GET  /api/users/workers
 GET|PUT /api/users/me/availability
 GET|PUT /api/users/me/employer

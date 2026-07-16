@@ -36,6 +36,14 @@ out/
 /public/uploads/*
 !/public/uploads/.gitkeep
 
+# API verification / media uploads
+/api/uploads/
+!/api/uploads/**/.gitkeep
+/api/uploads/verification/*
+!/api/uploads/verification/.gitkeep
+/api/uploads/covers/*
+!/api/uploads/covers/.gitkeep
+
 # PHP / tooling caches
 .phpunit.result.cache
 .php-cs-fixer.cache

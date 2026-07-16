@@ -11,6 +11,7 @@ import {
   parseLocationInput,
 } from "../utils/location.js";
 import { createNotification } from "../services/notificationService.js";
+import { normalizeCoverUrl } from "../utils/coverUrl.js";
 
 const invalidCategoryError = () =>
   createError(
@@ -102,11 +103,19 @@ export const createJob = async (req, res, next) => {
       return next(createError(400, "positions must be an integer from 1 to 50."));
     }
 
+    let cover;
+    try {
+      cover = normalizeCoverUrl(req.body.cover, { required: false });
+    } catch (err) {
+      return next(err);
+    }
+
     const job = await Job.create({
       employerId: String(req.userId),
       title,
       description,
       cat: catSlug,
+      cover,
       location: location || undefined,
       budgetMin: budget.budgetMin,
       budgetMax: budget.budgetMax,
@@ -218,6 +227,19 @@ export const updateJob = async (req, res, next) => {
       job.description = description;
     }
 
+    if (req.body.cover !== undefined) {
+      try {
+        // empty string clears optional cover
+        if (req.body.cover === null || req.body.cover === "") {
+          job.cover = undefined;
+        } else {
+          job.cover = normalizeCoverUrl(req.body.cover, { required: false });
+        }
+      } catch (err) {
+        return next(err);
+      }
+    }
+
     if (req.body.cat !== undefined) {
       const catSlug = normalizeCategorySlug(req.body.cat);
       if (!catSlug) return next(invalidCategoryError());
@@ -297,7 +319,7 @@ export const updateJob = async (req, res, next) => {
     }
 
     if (req.body.status !== undefined) {
-      const allowed = ["open", "closed", "cancelled"];
+      const allowed = ["open", "closed", "cancelled", "suspended"];
       if (!allowed.includes(req.body.status)) {
         return next(
           createError(

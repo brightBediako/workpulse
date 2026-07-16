@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { Star } from "lucide-react";
 import type { Gig } from "@/lib/types";
+import { getApiUrl } from "@/lib/api";
 import { StatusChip } from "./StatusChip";
 
 function formatGhs(price: number) {
@@ -15,6 +16,13 @@ function rating(gig: Gig) {
   return (gig.totalStars || 0) / gig.starNumber;
 }
 
+function coverSrc(url?: string) {
+  if (!url) return "/placeholder-gig.svg";
+  if (url.startsWith("http://") || url.startsWith("https://")) return url;
+  if (url.startsWith("/")) return `${getApiUrl()}${url}`;
+  return url;
+}
+
 export function GigCard({ gig }: { gig: Gig }) {
   const stars = rating(gig);
   return (
@@ -25,7 +33,7 @@ export function GigCard({ gig }: { gig: Gig }) {
       <div className="aspect-[16/10] bg-surface-container overflow-hidden">
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img
-          src={gig.cover || "/placeholder-gig.svg"}
+          src={coverSrc(gig.cover)}
           alt={gig.title}
           className="w-full h-full object-cover group-hover:scale-[1.02] transition"
         />

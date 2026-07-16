@@ -4,6 +4,7 @@ const toneMap: Record<string, string> = {
   verified: "bg-primary-fixed/50 text-on-primary-fixed-variant",
   rejected: "bg-error-container text-on-error-container",
   suspended: "bg-surface-container-highest text-on-surface-variant",
+  closed: "bg-surface-container-highest text-on-surface-variant",
   in_progress: "bg-tertiary-fixed/60 text-on-tertiary-fixed-variant",
   completed: "bg-primary-fixed/50 text-on-primary-fixed-variant",
   cancelled: "bg-surface-container-highest text-on-surface-variant",

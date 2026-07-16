@@ -82,6 +82,18 @@ export function MarketplaceNav() {
                 My gigs
               </Link>
             ) : null}
+            {user ? (
+              <Link
+                href="/account"
+                className={`text-[15px] transition-colors pb-1 ${
+                  pathname.startsWith("/account")
+                    ? "text-primary font-bold border-b-2 border-primary"
+                    : "text-on-surface-variant font-medium hover:text-primary"
+                }`}
+              >
+                Account
+              </Link>
+            ) : null}
           </div>
         </div>
 
@@ -99,9 +111,12 @@ export function MarketplaceNav() {
                   </span>
                 ) : null}
               </Link>
-              <span className="hidden lg:inline font-body-dense text-on-surface-variant max-w-[8rem] truncate">
+              <Link
+                href="/account"
+                className="hidden lg:inline font-body-dense text-on-surface-variant max-w-[8rem] truncate hover:text-primary hover:underline"
+              >
                 {user.username}
-              </span>
+              </Link>
               <button
                 type="button"
                 onClick={() => logout()}
@@ -177,6 +192,15 @@ export function MarketplaceNav() {
               className="block py-sm"
             >
               My gigs
+            </Link>
+          ) : null}
+          {user ? (
+            <Link
+              href="/account"
+              onClick={() => setOpen(false)}
+              className="block py-sm"
+            >
+              Account
             </Link>
           ) : null}
           {user ? (

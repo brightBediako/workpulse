@@ -4,7 +4,9 @@ import {
   deleteGig,
   getGig,
   getGigs,
-  updateGig
+  updateGig,
+  suspendOwnGig,
+  resumeOwnGig,
 } from "../controllers/gig.controller.js";
 import { verifyToken } from "../middlewares/jwt.js";
 
@@ -12,6 +14,8 @@ const router = express.Router();
 
 router.post("/", verifyToken, createGig);
 router.delete("/:id", verifyToken, deleteGig);
+router.put("/:id/suspend", verifyToken, suspendOwnGig);
+router.put("/:id/resume", verifyToken, resumeOwnGig);
 router.get("/single/:id", getGig);
 router.get("/", getGigs);
 router.put("/:id", verifyToken, updateGig);

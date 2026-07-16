@@ -21,6 +21,13 @@ export type User = {
   verificationStatus?: string;
   accountModes?: AccountModes;
   companyName?: string | null;
+  companyDesc?: string | null;
+  serviceCity?: string;
+  serviceRegion?: string;
+  payoutMethod?: string;
+  payoutProvider?: string | null;
+  payoutAccountName?: string | null;
+  payoutAccountNumber?: string | null;
 };
 
 export type Gig = {
@@ -92,8 +99,13 @@ export type Job = {
   description: string;
   cat: string;
   status: string;
+  cover?: string;
   budgetMin?: number;
   budgetMax?: number;
   currency?: string;
-  location?: { city?: string; region?: string };
+  employmentType?: string;
+  positions?: number;
+  applicationCount?: number;
+  employerId?: string;
+  location?: { city?: string; region?: string; country?: string };
 };

@@ -57,12 +57,15 @@ export function CoverImageField({
     <div className="space-y-md">
       <Input
         label={`${label}${required ? "" : " (optional)"}`}
-        type="url"
-        placeholder="https://… or upload a file below"
+        type="text"
+        placeholder="https://… or /uploads/covers/…"
         value={value}
         onChange={(e) => onChange(e.target.value)}
         required={required}
-        hint={hint || "Paste an image URL, or upload a PNG/JPG/WEBP (max 5 MB)."}
+        hint={
+          hint ||
+          "Paste an image URL, or upload a PNG/JPG/WEBP (max 5 MB). Uploaded files use a /uploads/… path."
+        }
       />
       <div className="flex flex-wrap items-center gap-sm">
         <label className="inline-flex">

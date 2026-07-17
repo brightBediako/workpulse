@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useEffect, useState } from "react";
+import { FormEvent, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { MarketplaceNav } from "@/components/layout/MarketplaceNav";
 import { Button } from "@/components/ui/Button";
@@ -39,6 +39,27 @@ type JobForm = {
   cover: string;
 };
 
+type ApplicationRow = {
+  _id: string;
+  jobId: string;
+  workerId: string;
+  status: string;
+  coverLetter?: string;
+  proposedRate?: number;
+  reviewNote?: string;
+  createdAt?: string;
+  job?: Job | null;
+  worker?: {
+    _id?: string;
+    username?: string;
+    email?: string;
+    phone?: string;
+    isVerified?: boolean;
+  } | null;
+};
+
+type Tab = "open" | "applications" | "mine";
+
 const emptyForm = (cat = "plumbing"): JobForm => ({
   title: "",
   description: "",
@@ -69,9 +90,10 @@ function formFromJob(j: Job): JobForm {
 
 export default function JobsPage() {
   const { user, loading: authLoading, refreshUser } = useAuth();
-  const [tab, setTab] = useState<"open" | "mine">("open");
+  const [tab, setTab] = useState<Tab>("open");
   const [jobs, setJobs] = useState<Job[]>([]);
   const [myJobs, setMyJobs] = useState<Job[]>([]);
+  const [myApplications, setMyApplications] = useState<ApplicationRow[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
   const [loading, setLoading] = useState(true);
   const [mode, setMode] = useState<"closed" | "create" | "edit">("closed");
@@ -79,11 +101,29 @@ export default function JobsPage() {
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
   const [saving, setSaving] = useState(false);
-  const [enabling, setEnabling] = useState(false);
+  const [enabling, setEnabling] = useState<"employer" | "worker" | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [form, setForm] = useState<JobForm>(emptyForm());
 
+  const [applyJobId, setApplyJobId] = useState<string | null>(null);
+  const [coverLetter, setCoverLetter] = useState("");
+  const [proposedRate, setProposedRate] = useState("");
+  const [applying, setApplying] = useState(false);
+
+  const [reviewJobId, setReviewJobId] = useState<string | null>(null);
+  const [reviewApps, setReviewApps] = useState<ApplicationRow[]>([]);
+  const [loadingReview, setLoadingReview] = useState(false);
+
   const isEmployer = Boolean(user?.isEmployer || user?.accountModes?.employer);
+  const isWorker = Boolean(user?.isSeller || user?.accountModes?.worker);
+
+  const appliedJobIds = useMemo(() => {
+    const map = new Map<string, ApplicationRow>();
+    for (const a of myApplications) {
+      if (a.status !== "withdrawn") map.set(String(a.jobId), a);
+    }
+    return map;
+  }, [myApplications]);
 
   async function loadOpenJobs() {
     try {
@@ -107,6 +147,21 @@ export default function JobsPage() {
     }
   }
 
+  async function loadMyApplications() {
+    if (!user) {
+      setMyApplications([]);
+      return;
+    }
+    try {
+      const res = await api<{ applications: ApplicationRow[] }>(
+        "/api/jobs/applications/mine"
+      );
+      setMyApplications(res.applications || []);
+    } catch {
+      setMyApplications([]);
+    }
+  }
+
   useEffect(() => {
     api<{ categories?: Category[] } | Category[]>("/api/categories", {
       auth: false,
@@ -125,18 +180,23 @@ export default function JobsPage() {
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
-    Promise.all([loadOpenJobs(), loadMyJobs()]).finally(() => {
+    Promise.all([
+      loadOpenJobs(),
+      loadMyJobs(),
+      loadMyApplications(),
+    ]).finally(() => {
       if (!cancelled) setLoading(false);
     });
     return () => {
       cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [user?._id, isEmployer]);
+  }, [user?._id, isEmployer, isWorker]);
 
   useEffect(() => {
     if (!isEmployer && tab === "mine") setTab("open");
-  }, [isEmployer, tab]);
+    if (!user && tab === "applications") setTab("open");
+  }, [isEmployer, user, tab]);
 
   function openCreate() {
     setMode("create");
@@ -163,7 +223,7 @@ export default function JobsPage() {
 
   async function enableEmployer() {
     if (!user) return;
-    setEnabling(true);
+    setEnabling("employer");
     setError("");
     try {
       const res = await api<{ user?: typeof user; token?: string }>(
@@ -179,7 +239,27 @@ export default function JobsPage() {
         err instanceof ApiError ? err.message : "Could not enable employer mode"
       );
     } finally {
-      setEnabling(false);
+      setEnabling(null);
+    }
+  }
+
+  async function enableWorker() {
+    if (!user?._id) return;
+    setEnabling("worker");
+    setError("");
+    try {
+      await api(`/api/users/update/${user._id}`, {
+        method: "PUT",
+        body: { isSeller: true },
+      });
+      refreshUser({ ...user, isSeller: true });
+      setMessage("Worker mode enabled. You can apply to jobs now.");
+    } catch (err) {
+      setError(
+        err instanceof ApiError ? err.message : "Could not enable worker mode"
+      );
+    } finally {
+      setEnabling(null);
     }
   }
 
@@ -228,7 +308,8 @@ export default function JobsPage() {
       await fn();
       setMessage(ok);
       if (editingId === id) closeForm();
-      await Promise.all([loadOpenJobs(), loadMyJobs()]);
+      await Promise.all([loadOpenJobs(), loadMyJobs(), loadMyApplications()]);
+      if (reviewJobId === id) await openReview(id);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Action failed");
     } finally {
@@ -236,7 +317,103 @@ export default function JobsPage() {
     }
   }
 
-  const list = tab === "mine" ? myJobs : jobs;
+  function startApply(jobId: string) {
+    if (!user) {
+      window.location.href = `/login?next=${encodeURIComponent("/jobs")}`;
+      return;
+    }
+    setApplyJobId(jobId);
+    setCoverLetter("");
+    setProposedRate("");
+    setError("");
+    setMessage("");
+  }
+
+  async function submitApplication(e: FormEvent) {
+    e.preventDefault();
+    if (!applyJobId) return;
+    if (!isWorker) {
+      setError("Enable worker mode to apply for jobs.");
+      return;
+    }
+    setApplying(true);
+    setError("");
+    setMessage("");
+    try {
+      const body: Record<string, unknown> = {
+        coverLetter: coverLetter.trim() || undefined,
+      };
+      if (proposedRate.trim()) {
+        body.proposedRate = Number(proposedRate);
+      }
+      const res = await api<{ message?: string }>(
+        `/api/jobs/${applyJobId}/applications`,
+        { method: "POST", body }
+      );
+      setMessage(res.message || "Application submitted.");
+      setApplyJobId(null);
+      await Promise.all([loadMyApplications(), loadOpenJobs()]);
+      setTab("applications");
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Could not apply");
+    } finally {
+      setApplying(false);
+    }
+  }
+
+  async function withdrawApplication(jobId: string, appId: string) {
+    if (!window.confirm("Withdraw this application?")) return;
+    await runAction(
+      appId,
+      () =>
+        api(`/api/jobs/${jobId}/applications/${appId}/withdraw`, {
+          method: "PUT",
+        }).then(() => undefined),
+      "Application withdrawn"
+    );
+  }
+
+  async function openReview(jobId: string) {
+    setReviewJobId(jobId);
+    setLoadingReview(true);
+    setError("");
+    try {
+      const res = await api<{ applications: ApplicationRow[] }>(
+        `/api/jobs/${jobId}/applications`
+      );
+      setReviewApps(res.applications || []);
+    } catch (err) {
+      setReviewApps([]);
+      setError(
+        err instanceof ApiError ? err.message : "Could not load applicants"
+      );
+    } finally {
+      setLoadingReview(false);
+    }
+  }
+
+  async function reviewApp(
+    jobId: string,
+    appId: string,
+    decision: "accept" | "reject"
+  ) {
+    await runAction(
+      appId,
+      () =>
+        api(`/api/jobs/${jobId}/applications/${appId}/${decision}`, {
+          method: "PUT",
+          body: {},
+        }).then(() => undefined),
+      decision === "accept" ? "Applicant accepted" : "Applicant rejected"
+    );
+  }
+
+  const pageTitle =
+    tab === "mine"
+      ? "My job posts"
+      : tab === "applications"
+        ? "My applications"
+        : "Open job posts";
 
   if (authLoading) {
     return (
@@ -256,40 +433,51 @@ export default function JobsPage() {
         <div className="flex flex-wrap items-end justify-between gap-md mb-lg">
           <div>
             <p className="font-label-caps text-on-surface-variant mb-xs">
-              Employer jobs
+              Jobs marketplace
             </p>
-            <h1 className="font-page-title text-primary">
-              {tab === "mine" ? "My job posts" : "Open job posts"}
-            </h1>
+            <h1 className="font-page-title text-primary">{pageTitle}</h1>
           </div>
           <div className="flex flex-wrap gap-sm">
             {!user ? (
-              <Link href="/login">
-                <Button variant="outline">Log in to post</Button>
+              <Link href="/login?next=/jobs">
+                <Button variant="outline">Log in to apply or post</Button>
               </Link>
-            ) : !isEmployer ? (
-              <Button
-                variant="conversion"
-                loading={enabling}
-                onClick={enableEmployer}
-              >
-                Enable employer mode
-              </Button>
             ) : (
-              <Button
-                variant="conversion"
-                onClick={() =>
-                  mode === "closed" ? openCreate() : closeForm()
-                }
-              >
-                {mode === "closed" ? "Post a job" : "Close form"}
-              </Button>
+              <>
+                {!isWorker ? (
+                  <Button
+                    variant="outline"
+                    loading={enabling === "worker"}
+                    onClick={enableWorker}
+                  >
+                    Become a worker
+                  </Button>
+                ) : null}
+                {!isEmployer ? (
+                  <Button
+                    variant="conversion"
+                    loading={enabling === "employer"}
+                    onClick={enableEmployer}
+                  >
+                    Enable employer mode
+                  </Button>
+                ) : (
+                  <Button
+                    variant="conversion"
+                    onClick={() =>
+                      mode === "closed" ? openCreate() : closeForm()
+                    }
+                  >
+                    {mode === "closed" ? "Post a job" : "Close form"}
+                  </Button>
+                )}
+              </>
             )}
           </div>
         </div>
 
-        {user && isEmployer ? (
-          <div className="flex gap-md mb-lg border-b border-outline-variant">
+        {user ? (
+          <div className="flex flex-wrap gap-md mb-lg border-b border-outline-variant">
             <button
               type="button"
               className={`pb-sm font-body-dense ${
@@ -304,14 +492,27 @@ export default function JobsPage() {
             <button
               type="button"
               className={`pb-sm font-body-dense ${
-                tab === "mine"
+                tab === "applications"
                   ? "font-semibold text-primary border-b-2 border-primary"
                   : "text-on-surface-variant"
               }`}
-              onClick={() => setTab("mine")}
+              onClick={() => setTab("applications")}
             >
-              My posts ({myJobs.length})
+              My applications ({myApplications.length})
             </button>
+            {isEmployer ? (
+              <button
+                type="button"
+                className={`pb-sm font-body-dense ${
+                  tab === "mine"
+                    ? "font-semibold text-primary border-b-2 border-primary"
+                    : "text-on-surface-variant"
+                }`}
+                onClick={() => setTab("mine")}
+              >
+                My posts ({myJobs.length})
+              </button>
+            ) : null}
           </div>
         ) : null}
 
@@ -451,31 +652,87 @@ export default function JobsPage() {
 
         {loading ? (
           <p className="text-on-surface-variant">Loading…</p>
-        ) : list.length === 0 ? (
+        ) : tab === "applications" ? (
+          myApplications.length === 0 ? (
+            <EmptyState
+              title="No applications yet"
+              description="Browse open jobs and apply with a short cover letter."
+              action={
+                <Button onClick={() => setTab("open")}>Browse open jobs</Button>
+              }
+            />
+          ) : (
+            <div className="grid gap-md">
+              {myApplications.map((a) => (
+                <article
+                  key={a._id}
+                  className="p-md border border-outline-variant rounded-card bg-surface-container-lowest"
+                >
+                  <div className="flex flex-wrap items-start justify-between gap-sm mb-sm">
+                    <h2 className="font-section-title text-primary">
+                      {a.job?.title || "Job"}
+                    </h2>
+                    <StatusChip status={a.status} />
+                  </div>
+                  <p className="font-body-dense text-on-surface-variant mb-sm">
+                    {a.job?.location?.city || ""}
+                    {a.job?.cat ? ` · ${a.job.cat}` : ""}
+                  </p>
+                  {a.coverLetter ? (
+                    <p className="font-body-dense text-on-surface mb-sm">
+                      {a.coverLetter}
+                    </p>
+                  ) : null}
+                  {a.proposedRate != null ? (
+                    <p className="font-data-price text-primary mb-sm">
+                      Proposed: GHS {Number(a.proposedRate).toLocaleString()}
+                    </p>
+                  ) : null}
+                  {a.status === "pending" ? (
+                    <Button
+                      variant="ghost"
+                      className="!py-sm !px-md text-sm"
+                      loading={busyId === a._id}
+                      onClick={() => withdrawApplication(a.jobId, a._id)}
+                    >
+                      Withdraw
+                    </Button>
+                  ) : null}
+                </article>
+              ))}
+            </div>
+          )
+        ) : (tab === "mine" ? myJobs : jobs).length === 0 ? (
           <EmptyState
             title={tab === "mine" ? "No job posts yet" : "No open jobs"}
             description={
-              isEmployer
+              tab === "mine"
                 ? "Create your first job post to start hiring."
-                : user
-                  ? "Enable employer mode to post jobs, or browse when employers publish openings."
-                  : "Log in as an employer to post jobs."
+                : "Check back when employers publish openings."
             }
             action={
-              isEmployer ? (
+              tab === "mine" && isEmployer ? (
                 <Button onClick={openCreate}>Post a job</Button>
               ) : null
             }
           />
         ) : (
           <div className="grid gap-md">
-            {list.map((j) => {
+            {(tab === "mine" ? myJobs : jobs).map((j) => {
               const busy = busyId === j._id;
               const canManage =
                 tab === "mine" &&
                 isEmployer &&
                 j.status !== "cancelled" &&
                 j.status !== "filled";
+              const existing = appliedJobIds.get(String(j._id));
+              const isOwnJob =
+                user && String(j.employerId) === String(user._id);
+              const showApply =
+                tab === "open" &&
+                j.status === "open" &&
+                !isOwnJob;
+
               return (
                 <article
                   key={j._id}
@@ -493,7 +750,7 @@ export default function JobsPage() {
                     <h2 className="font-section-title text-primary">{j.title}</h2>
                     <StatusChip status={j.status} />
                   </div>
-                  <p className="font-body-dense text-on-surface-variant line-clamp-2 mb-sm">
+                  <p className="font-body-dense text-on-surface-variant line-clamp-3 mb-sm">
                     {j.description}
                   </p>
                   <p className="font-label-caps text-on-surface-variant">
@@ -509,6 +766,97 @@ export default function JobsPage() {
                       {j.budgetMax ?? "—"}
                     </p>
                   )}
+
+                  {showApply ? (
+                    <div className="mt-md space-y-md">
+                      {existing ? (
+                        <div className="flex flex-wrap items-center gap-sm">
+                          <StatusChip
+                            status={existing.status}
+                            label={`Applied · ${existing.status}`}
+                          />
+                          {existing.status === "pending" ? (
+                            <Button
+                              variant="ghost"
+                              className="!py-sm !px-md text-sm"
+                              loading={busyId === existing._id}
+                              onClick={() =>
+                                withdrawApplication(j._id, existing._id)
+                              }
+                            >
+                              Withdraw
+                            </Button>
+                          ) : null}
+                        </div>
+                      ) : applyJobId === j._id ? (
+                        <form
+                          onSubmit={submitApplication}
+                          className="p-md rounded-md border border-outline-variant bg-surface-container-low space-y-md max-w-lg"
+                        >
+                          {!isWorker ? (
+                            <p className="font-body-dense text-on-surface-variant">
+                              Enable worker mode to submit an application.
+                            </p>
+                          ) : null}
+                          <div className="space-y-xs">
+                            <label className="font-label-caps text-on-surface-variant block">
+                              Cover letter
+                            </label>
+                            <textarea
+                              className="w-full min-h-24 bg-surface-container-lowest border border-outline-variant rounded-md px-md py-md font-sans text-[15px] focus:outline-none focus:ring-1 focus:border-primary-container focus:ring-primary-container"
+                              value={coverLetter}
+                              onChange={(e) => setCoverLetter(e.target.value)}
+                              placeholder="Why you're a fit for this job…"
+                              maxLength={2000}
+                            />
+                          </div>
+                          <Input
+                            label="Proposed rate (GHS, optional)"
+                            type="number"
+                            min={0}
+                            value={proposedRate}
+                            onChange={(e) => setProposedRate(e.target.value)}
+                          />
+                          <div className="flex flex-wrap gap-sm">
+                            <Button
+                              type="submit"
+                              variant="conversion"
+                              loading={applying}
+                              disabled={!isWorker}
+                            >
+                              Submit application
+                            </Button>
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              onClick={() => setApplyJobId(null)}
+                            >
+                              Cancel
+                            </Button>
+                            {!isWorker ? (
+                              <Button
+                                type="button"
+                                variant="outline"
+                                loading={enabling === "worker"}
+                                onClick={enableWorker}
+                              >
+                                Become a worker
+                              </Button>
+                            ) : null}
+                          </div>
+                        </form>
+                      ) : (
+                        <Button
+                          variant="conversion"
+                          className="!py-sm !px-md text-sm"
+                          onClick={() => startApply(j._id)}
+                        >
+                          Apply
+                        </Button>
+                      )}
+                    </div>
+                  ) : null}
+
                   {canManage ? (
                     <div className="flex flex-wrap gap-sm mt-md">
                       <Button
@@ -518,6 +866,20 @@ export default function JobsPage() {
                         onClick={() => openEdit(j)}
                       >
                         Update
+                      </Button>
+                      <Button
+                        variant="outline"
+                        className="!py-sm !px-md text-sm"
+                        loading={loadingReview && reviewJobId === j._id}
+                        onClick={() =>
+                          reviewJobId === j._id
+                            ? setReviewJobId(null)
+                            : openReview(j._id)
+                        }
+                      >
+                        {reviewJobId === j._id
+                          ? "Hide applicants"
+                          : `Applicants (${j.applicationCount ?? 0})`}
                       </Button>
                       {j.status === "suspended" || j.status === "closed" ? (
                         <Button
@@ -577,6 +939,77 @@ export default function JobsPage() {
                       >
                         Delete
                       </Button>
+                    </div>
+                  ) : null}
+
+                  {tab === "mine" && reviewJobId === j._id ? (
+                    <div className="mt-md pt-md border-t border-surface-container-low space-y-sm">
+                      <h3 className="font-label-caps text-on-surface-variant">
+                        Applicants
+                      </h3>
+                      {loadingReview ? (
+                        <p className="font-body-dense text-on-surface-variant">
+                          Loading…
+                        </p>
+                      ) : reviewApps.length === 0 ? (
+                        <p className="font-body-dense text-on-surface-variant">
+                          No applications yet.
+                        </p>
+                      ) : (
+                        reviewApps.map((a) => (
+                          <div
+                            key={a._id}
+                            className="p-md rounded-md border border-outline-variant bg-surface-container-low space-y-sm"
+                          >
+                            <div className="flex flex-wrap items-center justify-between gap-sm">
+                              <div>
+                                <p className="font-semibold text-primary">
+                                  {a.worker?.username || "Worker"}
+                                </p>
+                                <p className="font-body-dense text-on-surface-variant">
+                                  {a.worker?.email || ""}
+                                  {a.worker?.phone
+                                    ? ` · ${a.worker.phone}`
+                                    : ""}
+                                </p>
+                              </div>
+                              <StatusChip status={a.status} />
+                            </div>
+                            {a.coverLetter ? (
+                              <p className="font-body-dense">{a.coverLetter}</p>
+                            ) : null}
+                            {a.proposedRate != null ? (
+                              <p className="font-data-price text-primary">
+                                Proposed: GHS{" "}
+                                {Number(a.proposedRate).toLocaleString()}
+                              </p>
+                            ) : null}
+                            {a.status === "pending" ? (
+                              <div className="flex flex-wrap gap-sm">
+                                <Button
+                                  className="!py-sm !px-md text-sm"
+                                  loading={busyId === a._id}
+                                  onClick={() =>
+                                    reviewApp(j._id, a._id, "accept")
+                                  }
+                                >
+                                  Accept
+                                </Button>
+                                <Button
+                                  variant="outline"
+                                  className="!py-sm !px-md text-sm"
+                                  loading={busyId === a._id}
+                                  onClick={() =>
+                                    reviewApp(j._id, a._id, "reject")
+                                  }
+                                >
+                                  Reject
+                                </Button>
+                              </div>
+                            ) : null}
+                          </div>
+                        ))
+                      )}
                     </div>
                   ) : null}
                 </article>

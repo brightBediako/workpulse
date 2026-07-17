@@ -14,6 +14,14 @@ import {
 } from "../utils/availability.js";
 import jwt from "jsonwebtoken";
 import { getAccessTokenCookieOptions } from "../utils/authCookies.js";
+import {
+  MAX_PAYOUT_ACCOUNTS,
+  normalizePayoutAccountInput,
+  resolvePayoutAccounts,
+  serializePayoutAccount,
+  syncLegacyPayoutFields,
+} from "../utils/payoutValidation.js";
+import { getSellerPayoutBalance } from "../utils/payoutBalance.js";
 
 const PRIVILEGED_USER_FIELDS = [
   "password",
@@ -29,6 +37,7 @@ const PRIVILEGED_USER_FIELDS = [
   "availabilityTimezone",
   "availabilityNote",
   "availabilityUpdatedAt",
+  "payoutAccounts",
   "payoutMethod",
   "payoutProvider",
   "payoutAccountName",
@@ -89,6 +98,20 @@ const publicUserView = (userDoc, { includeDocuments = false } = {}) => {
     accountModes: modes,
   };
   const payoutPayload = {
+    payoutAccounts: resolvePayoutAccounts(rest).map((a) =>
+      a._id === "legacy"
+        ? {
+            id: "legacy",
+            method: a.method,
+            provider: a.provider,
+            accountName: a.accountName,
+            accountNumber: a.accountNumber,
+            label: null,
+            createdAt: a.createdAt,
+            updatedAt: a.updatedAt,
+          }
+        : serializePayoutAccount(a)
+    ),
     payoutMethod: rest.payoutMethod || "none",
     payoutProvider: rest.payoutProvider || null,
     payoutAccountName: rest.payoutAccountName || null,
@@ -349,11 +372,11 @@ export const uploadVerificationDocuments = async (req, res, next) => {
   }
 };
 
-/** GET /api/users/me/payout — payout destination */
+/** GET /api/users/me/payout — list payout destinations */
 export const getMyPayout = async (req, res, next) => {
   try {
     const user = await User.findById(req.userId).select(
-      "isSeller isEmployer payoutMethod payoutProvider payoutAccountName payoutAccountNumber payoutUpdatedAt"
+      "isSeller isEmployer payoutAccounts payoutMethod payoutProvider payoutAccountName payoutAccountNumber payoutUpdatedAt"
     );
     if (!user) return next(createError(404, "User not found!"));
 
@@ -363,12 +386,29 @@ export const getMyPayout = async (req, res, next) => {
       );
     }
 
+    const accounts = resolvePayoutAccounts(user).map((a) =>
+      a._id === "legacy"
+        ? {
+            id: "legacy",
+            method: a.method,
+            provider: a.provider,
+            accountName: a.accountName,
+            accountNumber: a.accountNumber,
+            label: null,
+            createdAt: a.createdAt,
+            updatedAt: a.updatedAt,
+          }
+        : serializePayoutAccount(a)
+    );
+
     res.status(200).json({
+      accounts,
+      payoutUpdatedAt: user.payoutUpdatedAt || null,
+      // Legacy single-destination fields (first account)
       payoutMethod: user.payoutMethod || "none",
       payoutProvider: user.payoutProvider || null,
       payoutAccountName: user.payoutAccountName || null,
       payoutAccountNumber: user.payoutAccountNumber || null,
-      payoutUpdatedAt: user.payoutUpdatedAt || null,
     });
   } catch (err) {
     next(err);
@@ -376,10 +416,37 @@ export const getMyPayout = async (req, res, next) => {
 };
 
 /**
- * PUT /api/users/me/payout
- * Body: { payoutMethod, payoutProvider?, payoutAccountName?, payoutAccountNumber? }
+ * Ensure legacy flat payout is migrated into payoutAccounts before mutating.
  */
-export const setMyPayout = async (req, res, next) => {
+const ensurePayoutAccountsMigrated = (user) => {
+  if (Array.isArray(user.payoutAccounts) && user.payoutAccounts.length > 0) {
+    return;
+  }
+  if (
+    user.payoutMethod &&
+    user.payoutMethod !== "none" &&
+    user.payoutProvider &&
+    user.payoutAccountName &&
+    user.payoutAccountNumber
+  ) {
+    user.payoutAccounts = [
+      {
+        method: user.payoutMethod,
+        provider: user.payoutProvider,
+        accountName: user.payoutAccountName,
+        accountNumber: String(user.payoutAccountNumber).replace(/\D/g, ""),
+      },
+    ];
+  } else if (!Array.isArray(user.payoutAccounts)) {
+    user.payoutAccounts = [];
+  }
+};
+
+/**
+ * POST /api/users/me/payout — add a MoMo or bank payout account
+ * Body: { method, provider, accountName, accountNumber } (legacy names also accepted)
+ */
+export const addMyPayout = async (req, res, next) => {
   try {
     const user = await User.findById(req.userId);
     if (!user) return next(createError(404, "User not found!"));
@@ -390,23 +457,189 @@ export const setMyPayout = async (req, res, next) => {
       );
     }
 
-    const method = req.body.payoutMethod;
-    const allowed = ["none", "mobile_money", "bank"];
-    if (!allowed.includes(method)) {
+    const normalized = normalizePayoutAccountInput(req.body);
+    if (normalized.error) {
+      return next(createError(400, normalized.error));
+    }
+
+    ensurePayoutAccountsMigrated(user);
+
+    if (user.payoutAccounts.length >= MAX_PAYOUT_ACCOUNTS) {
       return next(
-        createError(400, `payoutMethod must be one of: ${allowed.join(", ")}`)
+        createError(
+          400,
+          `You can save at most ${MAX_PAYOUT_ACCOUNTS} payout accounts.`
+        )
       );
     }
 
-    if (method === "none") {
-      user.payoutMethod = "none";
-      user.payoutProvider = undefined;
-      user.payoutAccountName = undefined;
-      user.payoutAccountNumber = undefined;
-      user.payoutUpdatedAt = new Date();
+    user.payoutAccounts.push({
+      method: normalized.method,
+      provider: normalized.provider,
+      accountName: normalized.accountName,
+      accountNumber: normalized.accountNumber,
+      label:
+        typeof req.body.label === "string"
+          ? req.body.label.trim().slice(0, 60)
+          : undefined,
+    });
+    syncLegacyPayoutFields(user);
+    await user.save();
+
+    const created = user.payoutAccounts[user.payoutAccounts.length - 1];
+    res.status(201).json({
+      message: "Payout account added.",
+      account: serializePayoutAccount(created),
+      accounts: user.payoutAccounts.map(serializePayoutAccount),
+      payoutUpdatedAt: user.payoutUpdatedAt,
+    });
+  } catch (err) {
+    next(err);
+  }
+};
+
+/**
+ * PUT /api/users/me/payout/:accountId — update one payout account
+ */
+export const updateMyPayout = async (req, res, next) => {
+  try {
+    const user = await User.findById(req.userId);
+    if (!user) return next(createError(404, "User not found!"));
+
+    if (!user.isSeller && !user.isEmployer) {
+      return next(
+        createError(403, "Only workers or employers can manage payout settings.")
+      );
+    }
+
+    ensurePayoutAccountsMigrated(user);
+
+    const { accountId } = req.params;
+    if (accountId === "legacy") {
+      // First save after migration: treat as update of the only migrated row
+      if (user.payoutAccounts.length !== 1) {
+        return next(
+          createError(400, "Legacy payout already migrated. Refresh and try again.")
+        );
+      }
+    }
+
+    const account =
+      accountId === "legacy"
+        ? user.payoutAccounts[0]
+        : user.payoutAccounts.id(accountId);
+
+    if (!account) {
+      return next(createError(404, "Payout account not found!"));
+    }
+
+    const normalized = normalizePayoutAccountInput({
+      method: req.body.method ?? req.body.payoutMethod ?? account.method,
+      provider: req.body.provider ?? req.body.payoutProvider ?? account.provider,
+      accountName:
+        req.body.accountName ??
+        req.body.payoutAccountName ??
+        account.accountName,
+      accountNumber:
+        req.body.accountNumber ??
+        req.body.payoutAccountNumber ??
+        account.accountNumber,
+    });
+    if (normalized.error) {
+      return next(createError(400, normalized.error));
+    }
+
+    account.method = normalized.method;
+    account.provider = normalized.provider;
+    account.accountName = normalized.accountName;
+    account.accountNumber = normalized.accountNumber;
+    if (typeof req.body.label === "string") {
+      account.label = req.body.label.trim().slice(0, 60) || undefined;
+    }
+
+    syncLegacyPayoutFields(user);
+    await user.save();
+
+    res.status(200).json({
+      message: "Payout account updated.",
+      account: serializePayoutAccount(account),
+      accounts: user.payoutAccounts.map(serializePayoutAccount),
+      payoutUpdatedAt: user.payoutUpdatedAt,
+    });
+  } catch (err) {
+    next(err);
+  }
+};
+
+/**
+ * DELETE /api/users/me/payout/:accountId
+ */
+export const deleteMyPayout = async (req, res, next) => {
+  try {
+    const user = await User.findById(req.userId);
+    if (!user) return next(createError(404, "User not found!"));
+
+    if (!user.isSeller && !user.isEmployer) {
+      return next(
+        createError(403, "Only workers or employers can manage payout settings.")
+      );
+    }
+
+    ensurePayoutAccountsMigrated(user);
+
+    const { accountId } = req.params;
+    if (accountId === "legacy") {
+      if (user.payoutAccounts.length === 1) {
+        user.payoutAccounts.splice(0, 1);
+      } else {
+        return next(
+          createError(400, "Legacy payout already migrated. Refresh and try again.")
+        );
+      }
+    } else {
+      const account = user.payoutAccounts.id(accountId);
+      if (!account) {
+        return next(createError(404, "Payout account not found!"));
+      }
+      account.deleteOne();
+    }
+
+    syncLegacyPayoutFields(user);
+    await user.save();
+
+    res.status(200).json({
+      message: "Payout account removed.",
+      accounts: user.payoutAccounts.map(serializePayoutAccount),
+      payoutUpdatedAt: user.payoutUpdatedAt,
+    });
+  } catch (err) {
+    next(err);
+  }
+};
+
+/**
+ * PUT /api/users/me/payout — legacy: add account (or clear all if method=none)
+ * Prefer POST /me/payout for new clients.
+ */
+export const setMyPayout = async (req, res, next) => {
+  try {
+    if (req.body.payoutMethod === "none" || req.body.method === "none") {
+      const user = await User.findById(req.userId);
+      if (!user) return next(createError(404, "User not found!"));
+      if (!user.isSeller && !user.isEmployer) {
+        return next(
+          createError(
+            403,
+            "Only workers or employers can manage payout settings."
+          )
+        );
+      }
+      user.payoutAccounts = [];
+      syncLegacyPayoutFields(user);
       await user.save();
       return res.status(200).json({
-        message: "Payout method cleared.",
+        message: "All payout accounts cleared.",
+        accounts: [],
         payoutMethod: "none",
         payoutProvider: null,
         payoutAccountName: null,
@@ -415,43 +648,8 @@ export const setMyPayout = async (req, res, next) => {
       });
     }
 
-    const provider =
-      typeof req.body.payoutProvider === "string"
-        ? req.body.payoutProvider.trim().slice(0, 80)
-        : "";
-    const accountName =
-      typeof req.body.payoutAccountName === "string"
-        ? req.body.payoutAccountName.trim().slice(0, 120)
-        : "";
-    const accountNumber =
-      typeof req.body.payoutAccountNumber === "string"
-        ? req.body.payoutAccountNumber.trim().slice(0, 40)
-        : "";
-
-    if (!provider || !accountName || !accountNumber) {
-      return next(
-        createError(
-          400,
-          "payoutProvider, payoutAccountName, and payoutAccountNumber are required."
-        )
-      );
-    }
-
-    user.payoutMethod = method;
-    user.payoutProvider = provider;
-    user.payoutAccountName = accountName;
-    user.payoutAccountNumber = accountNumber;
-    user.payoutUpdatedAt = new Date();
-    await user.save();
-
-    res.status(200).json({
-      message: "Payout settings saved.",
-      payoutMethod: user.payoutMethod,
-      payoutProvider: user.payoutProvider,
-      payoutAccountName: user.payoutAccountName,
-      payoutAccountNumber: user.payoutAccountNumber,
-      payoutUpdatedAt: user.payoutUpdatedAt,
-    });
+    // Delegate to add
+    return addMyPayout(req, res, next);
   } catch (err) {
     next(err);
   }
@@ -478,26 +676,19 @@ export const getMyEarnings = async (req, res, next) => {
       .sort({ createdAt: -1 })
       .limit(50);
 
-    const summary = await Order.aggregate([
-      { $match: { sellerId, isCompleted: true } },
-      {
-        $group: {
-          _id: null,
-          totalEarnings: { $sum: "$sellerEarnings" },
-          totalGross: { $sum: "$price" },
-          totalPlatformFees: { $sum: "$platformFee" },
-          completedOrders: { $sum: 1 },
-        },
-      },
-    ]);
+    const balance = await getSellerPayoutBalance(sellerId);
 
-    const s = summary[0] || {};
     res.status(200).json({
-      totalEarnings: s.totalEarnings || 0,
-      totalGross: s.totalGross || 0,
-      totalPlatformFees: s.totalPlatformFees || 0,
-      completedOrders: s.completedOrders || 0,
-      currency: "GHS",
+      totalEarnings: balance.totalEarnings,
+      totalGross: balance.totalGross,
+      totalPlatformFees: balance.totalPlatformFees,
+      completedOrders: balance.completedOrders,
+      availableBalance: balance.availableBalance,
+      pendingAmount: balance.pendingAmount,
+      approvedAmount: balance.approvedAmount,
+      paidOut: balance.paidOut,
+      minPayoutAmount: balance.minPayoutAmount,
+      currency: balance.currency,
       recentOrders: completed,
     });
   } catch (err) {

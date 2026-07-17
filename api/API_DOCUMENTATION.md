@@ -116,8 +116,11 @@ Mount: `/api/users`
 | GET | `/me/verification` | JWT | Own verification status + document URLs |
 | PUT | `/me/verification` | JWT | Worker/employer submits doc URLs for review |
 | POST | `/me/verification/upload` | JWT | Multipart upload (PDF/PNG/JPG/WEBP) → `/uploads/…` URLs |
-| GET | `/me/payout` | JWT | Payout destination (MoMo / bank) |
-| PUT | `/me/payout` | JWT | Save payout method + account details |
+| GET | `/me/payout` | JWT | List payout accounts (MoMo / bank) |
+| POST | `/me/payout` | JWT | Add payout account (validated) |
+| PUT | `/me/payout/:accountId` | JWT | Update one payout account |
+| DELETE | `/me/payout/:accountId` | JWT | Remove one payout account |
+| PUT | `/me/payout` | JWT | Legacy: clear all (`none`) or add |
 | GET | `/me/earnings` | JWT seller | Net earnings + recent completed orders |
 | GET | `/me/employer` | JWT | Own employer mode + company profile |
 | PUT | `/me/employer` | JWT | Enable/disable employer mode; refresh JWT cookie |
@@ -157,9 +160,31 @@ Body: `{ "documents": ["https://…", "/uploads/verification/…"] }` (1–10 UR
 
 `POST /api/users/me/verification/upload` — multipart field `documents` (up to 5 files). Returns `{ documents: ["/uploads/verification/…"] }`.
 
-`PUT /api/users/me/payout` — `{ payoutMethod: "mobile_money"|"bank"|"none", payoutProvider?, payoutAccountName?, payoutAccountNumber? }`.
+`GET /api/users/me/payout` — `{ accounts: [{ id, method, provider, accountName, accountNumber }], … }` (legacy flat fields still included).
 
-`GET /api/users/me/earnings` — worker-only summary: `totalEarnings`, `totalGross`, `totalPlatformFees`, `completedOrders`, `recentOrders`.
+`POST /api/users/me/payout` — add account `{ method: "mobile_money"|"bank", provider, accountName, accountNumber }`. MoMo number must be **exactly 10 digits**. Bank account **8–20 digits**.
+
+`PUT /api/users/me/payout/:accountId` — update one account.  
+`DELETE /api/users/me/payout/:accountId` — remove one account.  
+`PUT /api/users/me/payout` with `{ payoutMethod: "none" }` clears all; otherwise adds (legacy).
+
+`GET /api/users/me/earnings` — worker-only summary: `totalEarnings`, `availableBalance`, `pendingAmount`, `paidOut`, `minPayoutAmount`, `recentOrders`.
+
+### Payout requests
+
+Workers request withdrawals against available balance. Admins approve / reject / mark paid (manual MoMo or bank transfer).
+
+| Method | Path | Auth | Notes |
+| ------ | ---- | ---- | ----- |
+| GET | `/api/users/me/payout-requests` | JWT seller | List own requests + balance |
+| POST | `/api/users/me/payout-requests` | JWT seller | Body `{ amount, payoutAccountId?, note? }` |
+| PUT | `/api/users/me/payout-requests/:id/cancel` | JWT seller | Cancel while `pending` |
+| GET | `/api/admin/payouts` | Admin | Filter `?status=` |
+| PUT | `/api/admin/payouts/:id/approve` | Admin | pending → approved |
+| PUT | `/api/admin/payouts/:id/reject` | Admin | Body `{ reason }` |
+| PUT | `/api/admin/payouts/:id/paid` | Admin | Mark sent after manual transfer |
+
+Statuses: `pending` · `approved` · `rejected` · `paid` · `cancelled`. Min amount: `MIN_PAYOUT_AMOUNT` (default 10 GHS).
 
 ```json
 {
@@ -437,7 +462,11 @@ Approve/reject create seller notifications.
 | ------ | ---- | ------ |
 | GET | `/payments/stats` | Implemented |
 | GET | `/payments/earnings` | Implemented |
-| POST | `/payments/withdrawals/:id/process` | **501** not supported |
+| GET | `/payouts` | List payout requests |
+| PUT | `/payouts/:id/approve` | Approve pending |
+| PUT | `/payouts/:id/reject` | Reject with reason |
+| PUT | `/payouts/:id/paid` | Mark paid after transfer |
+| POST | `/payments/withdrawals/:id/process` | Alias → mark paid |
 | POST | `/reports/generate` | Implemented (`type`: users \| gigs \| orders \| revenue) |
 | GET | `/logs` | **501** not supported |
 

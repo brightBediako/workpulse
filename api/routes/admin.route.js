@@ -1,6 +1,6 @@
 import express from "express";
 import { verifyToken } from "../middlewares/jwt.js";
-import { verifyAdmin, verifySuperAdmin } from "../middlewares/adminAuth.js";
+import { verifyAdmin } from "../middlewares/adminAuth.js";
 import {
   // Dashboard
   getDashboardStats,
@@ -39,6 +39,12 @@ import {
   generateReport,
   getSystemLogs,
 } from "../controllers/admin.controller.js";
+import {
+  listAdminPayouts,
+  approvePayout,
+  rejectPayout,
+  markPayoutPaid,
+} from "../controllers/payoutRequest.controller.js";
 
 const router = express.Router();
 
@@ -74,9 +80,13 @@ router.get("/orders/:id", getOrderById);
 router.put("/orders/:id/resolve-dispute", resolveDispute);
 router.put("/orders/:id/status", updateOrderStatus);
 
-// Payment Management Routes
+// Payment / Payout Management
 router.get("/payments/stats", getPaymentStats);
 router.get("/payments/earnings", getEarningsReport);
+router.get("/payouts", listAdminPayouts);
+router.put("/payouts/:id/approve", approvePayout);
+router.put("/payouts/:id/reject", rejectPayout);
+router.put("/payouts/:id/paid", markPayoutPaid);
 router.post("/payments/withdrawals/:id/process", processWithdrawal);
 
 // Reports Routes

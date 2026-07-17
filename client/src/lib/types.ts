@@ -28,6 +28,14 @@ export type User = {
   payoutProvider?: string | null;
   payoutAccountName?: string | null;
   payoutAccountNumber?: string | null;
+  payoutAccounts?: Array<{
+    id: string;
+    method: string;
+    provider: string;
+    accountName: string;
+    accountNumber: string;
+    label?: string | null;
+  }>;
 };
 
 export type Gig = {

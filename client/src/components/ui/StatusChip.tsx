@@ -7,6 +7,7 @@ const toneMap: Record<string, string> = {
   closed: "bg-surface-container-highest text-on-surface-variant",
   in_progress: "bg-tertiary-fixed/60 text-on-tertiary-fixed-variant",
   completed: "bg-primary-fixed/50 text-on-primary-fixed-variant",
+  paid: "bg-primary-fixed/50 text-on-primary-fixed-variant",
   cancelled: "bg-surface-container-highest text-on-surface-variant",
   disputed: "bg-error-container text-on-error-container",
   open: "bg-primary-fixed/40 text-on-primary-fixed-variant",

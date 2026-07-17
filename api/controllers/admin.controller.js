@@ -2,9 +2,11 @@ import User from "../models/user.model.js";
 import Gig from "../models/gig.model.js";
 import Order from "../models/order.model.js";
 import Review from "../models/review.model.js";
+import PayoutRequest from "../models/payoutRequest.model.js";
 import { createError } from "../middlewares/globalErrHandler.js";
 import { getPlatformFeeRate } from "../utils/orderFees.js";
 import { createNotification } from "../services/notificationService.js";
+import { markPayoutPaid } from "./payoutRequest.controller.js";
 
 // Admin Dashboard - Overview stats
 export const getDashboardStats = async (req, res, next) => {
@@ -35,6 +37,13 @@ export const getDashboardStats = async (req, res, next) => {
     const pendingOrders = await Order.countDocuments({ status: "pending" });
     const disputedOrders = await Order.countDocuments({
       disputeStatus: "open",
+    });
+
+    const pendingPayouts = await PayoutRequest.countDocuments({
+      status: "pending",
+    });
+    const approvedPayouts = await PayoutRequest.countDocuments({
+      status: "approved",
     });
 
     // Revenue stats
@@ -93,6 +102,8 @@ export const getDashboardStats = async (req, res, next) => {
         completedOrders,
         pendingOrders,
         disputedOrders,
+        pendingPayouts,
+        approvedPayouts,
         totalRevenue: totalRevenue[0]?.total || 0,
         monthlyRevenue: monthlyRevenue[0]?.total || 0,
         totalPlatformFees,
@@ -966,15 +977,10 @@ export const getEarningsReport = async (req, res, next) => {
   }
 };
 
+/** Alias for mark paid — used by legacy /payments/withdrawals/:id/process */
 export const processWithdrawal = async (req, res, next) => {
-  // Not supported yet — no payout / Paystack Transfer integration.
-  // Kept as an admin route so clients get a clear 501 instead of a fake success.
-  return next(
-    createError(
-      501,
-      "Seller withdrawals are not supported yet. Payouts will be added when Paystack Transfers (or similar) is configured."
-    )
-  );
+  req.params.id = req.params.id;
+  return markPayoutPaid(req, res, next);
 };
 
 // Reports

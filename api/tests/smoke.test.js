@@ -12,6 +12,11 @@ import {
   toMinorUnits,
   verifyWebhookSignature,
 } from "../services/paystackService.js";
+import {
+  isValidMomoNumber,
+  isValidBankAccountNumber,
+  normalizePayoutAccountInput,
+} from "../utils/payoutValidation.js";
 
 describe("gig categories", () => {
   it("normalizes known slugs and labels", () => {
@@ -78,5 +83,44 @@ describe("paystack helpers", () => {
       .digest("hex");
     assert.equal(verifyWebhookSignature(body, good), true);
     assert.equal(verifyWebhookSignature(body, "bad"), false);
+  });
+});
+
+describe("payout validation", () => {
+  it("requires MoMo numbers to be exactly 10 digits", () => {
+    assert.equal(isValidMomoNumber("0598866379"), true);
+    assert.equal(isValidMomoNumber("0598866379HG"), false);
+    assert.equal(isValidMomoNumber("598866379"), false);
+    assert.equal(isValidBankAccountNumber("1234567890"), true);
+    assert.equal(isValidBankAccountNumber("12ab"), false);
+  });
+
+  it("normalizes and rejects invalid MoMo input", () => {
+    const bad = normalizePayoutAccountInput({
+      method: "mobile_money",
+      provider: "MTN",
+      accountName: "Bright",
+      accountNumber: "0598866379HG",
+    });
+    assert.equal("error" in bad, true);
+
+    const tooShort = normalizePayoutAccountInput({
+      method: "mobile_money",
+      provider: "MTN",
+      accountName: "Bright",
+      accountNumber: "059886637",
+    });
+    assert.equal("error" in tooShort, true);
+
+    const good = normalizePayoutAccountInput({
+      method: "mobile_money",
+      provider: "MTN",
+      accountName: "Bright",
+      accountNumber: "0598866379",
+    });
+    assert.equal("error" in good, false);
+    if (!("error" in good)) {
+      assert.equal(good.accountNumber, "0598866379");
+    }
   });
 });

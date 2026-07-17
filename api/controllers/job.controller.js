@@ -470,10 +470,35 @@ export const getJobApplications = async (req, res, next) => {
     if (req.query.status) filter.status = req.query.status;
 
     const applications = await Application.find(filter).sort({ createdAt: -1 });
+    const workerIds = [...new Set(applications.map((a) => a.workerId))];
+    const workers = await User.find({ _id: { $in: workerIds } }).select(
+      "username email phone isVerified img"
+    );
+    const workerMap = Object.fromEntries(
+      workers.map((w) => [String(w._id), w])
+    );
+
+    const payload = applications.map((a) => {
+      const w = workerMap[String(a.workerId)];
+      return {
+        ...a.toObject(),
+        worker: w
+          ? {
+              _id: String(w._id),
+              username: w.username,
+              email: w.email,
+              phone: w.phone,
+              isVerified: w.isVerified,
+              img: w.img,
+            }
+          : null,
+      };
+    });
+
     res.status(200).json({
       jobId: job._id,
-      applications,
-      count: applications.length,
+      applications: payload,
+      count: payload.length,
     });
   } catch (err) {
     next(err.status ? err : err);

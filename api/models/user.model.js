@@ -164,7 +164,41 @@ const userSchema = new Schema(
       type: Date,
       required: false,
     },
-    /** Payout destination for worker/employer withdrawals (manual until Paystack Transfers) */
+    /** Payout destinations (MoMo / bank). Prefer payoutAccounts; flat fields kept for legacy. */
+    payoutAccounts: [
+      {
+        method: {
+          type: String,
+          enum: ["mobile_money", "bank"],
+          required: true,
+        },
+        provider: {
+          type: String,
+          required: true,
+          trim: true,
+          maxlength: 80,
+        },
+        accountName: {
+          type: String,
+          required: true,
+          trim: true,
+          maxlength: 120,
+        },
+        accountNumber: {
+          type: String,
+          required: true,
+          trim: true,
+          maxlength: 40,
+        },
+        label: {
+          type: String,
+          required: false,
+          trim: true,
+          maxlength: 60,
+        },
+      },
+    ],
+    /** @deprecated Prefer payoutAccounts[0] — kept for older clients */
     payoutMethod: {
       type: String,
       enum: ["none", "mobile_money", "bank"],

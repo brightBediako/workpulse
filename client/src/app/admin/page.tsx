@@ -22,6 +22,8 @@ type Overview = {
   completedOrders?: number;
   pendingOrders?: number;
   disputedOrders?: number;
+  pendingPayouts?: number;
+  approvedPayouts?: number;
   totalRevenue?: number;
   monthlyRevenue?: number;
   totalPlatformFees?: number;
@@ -122,6 +124,11 @@ export default function AdminOverviewPage() {
       href: "/admin/orders?disputeStatus=open",
     },
     {
+      label: "Pending payouts",
+      value: overview?.pendingPayouts,
+      href: "/admin/payouts?status=pending",
+    },
+    {
       label: "Banned",
       value: overview?.bannedUsers,
       href: "/admin/users?status=banned",
@@ -138,8 +145,11 @@ export default function AdminOverviewPage() {
           </p>
         </div>
         <div className="flex flex-wrap gap-sm">
+          <Link href="/admin/payouts">
+            <Button variant="conversion">Review payouts</Button>
+          </Link>
           <Link href="/admin/gigs?status=pending">
-            <Button variant="conversion">Review pending gigs</Button>
+            <Button variant="outline">Review pending gigs</Button>
           </Link>
           <Link href="/admin/users">
             <Button variant="outline">Manage users</Button>

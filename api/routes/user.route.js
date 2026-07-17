@@ -9,6 +9,9 @@ import {
   uploadVerificationDocuments,
   getMyPayout,
   setMyPayout,
+  addMyPayout,
+  updateMyPayout,
+  deleteMyPayout,
   getMyEarnings,
   discoverWorkers,
   getMyAvailability,
@@ -17,6 +20,11 @@ import {
   getMyEmployer,
   setMyEmployer,
 } from "../controllers/user.controller.js";
+import {
+  listMyPayoutRequests,
+  createMyPayoutRequest,
+  cancelMyPayoutRequest,
+} from "../controllers/payoutRequest.controller.js";
 import { verifyToken } from "../middlewares/jwt.js";
 import { verificationUpload } from "../middlewares/upload.js";
 
@@ -34,7 +42,17 @@ router.post(
   uploadVerificationDocuments
 );
 router.get("/me/payout", verifyToken, getMyPayout);
+router.post("/me/payout", verifyToken, addMyPayout);
 router.put("/me/payout", verifyToken, setMyPayout);
+router.put("/me/payout/:accountId", verifyToken, updateMyPayout);
+router.delete("/me/payout/:accountId", verifyToken, deleteMyPayout);
+router.get("/me/payout-requests", verifyToken, listMyPayoutRequests);
+router.post("/me/payout-requests", verifyToken, createMyPayoutRequest);
+router.put(
+  "/me/payout-requests/:id/cancel",
+  verifyToken,
+  cancelMyPayoutRequest
+);
 router.get("/me/earnings", verifyToken, getMyEarnings);
 router.get("/me/availability", verifyToken, getMyAvailability);
 router.put("/me/availability", verifyToken, setMyAvailability);

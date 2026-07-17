@@ -25,26 +25,21 @@ Copy `api/.env.example` → `api/.env` (never commit secrets).
 | `PORT` | No | Default `8000` |
 | `MONGO_URI` | Yes | Atlas connection string in production |
 | `JWT_KEY` | Yes | Long random secret |
-| `STRIPE_SECRET_KEY` | Yes for payments | Live or test key |
-| `STRIPE_WEBHOOK_SECRET` | Yes for webhooks | From Stripe Dashboard or `stripe listen` |
+| `PAYSTACK_SECRET_KEY` | Yes for payments | Live or test secret key |
+| `PAYSTACK_PUBLIC_KEY` | Optional | For future inline JS checkout |
+| `PAYSTACK_CURRENCY` | No | Default `GHS` (amounts in pesewas) |
 | `PLATFORM_FEE_PERCENT` | No | Default `10` |
 | `COOKIE_SECURE` | Prod | `true` when HTTPS + cross-site cookies |
-| `CLIENT_URL` | Yes | Production client URL (emails + CORS context) |
+| `CLIENT_URL` | Yes | Production client URL (emails + Paystack callback `/orders/callback`) |
 | `BCRYPT_SALT_ROUNDS` | No | Default `12` |
 | `SOCKET_PATH` | No | Default `/socket.io` |
 | Email `EMAIL_*` | Optional | Welcome mail |
 
-Webhook URL to register in Stripe:
+Webhook URL to register in Paystack:
 
 `https://<api-host>/api/orders/webhook`
 
-Events: `payment_intent.succeeded` (and optionally `payment_intent.payment_failed`).
-
-Local forwarding:
-
-```bash
-stripe listen --forward-to localhost:8000/api/orders/webhook
-```
+Event: `charge.success`. Signature uses HMAC SHA512 of the raw body with `PAYSTACK_SECRET_KEY` (`x-paystack-signature`). Local: tunnel the API (e.g. ngrok) or rely on the client callback verify path.
 
 ---
 
@@ -56,7 +51,7 @@ Copy `client/.env.example` → `client/.env.local`.
 | -------- | ----- |
 | `NEXT_PUBLIC_API_URL` | Public API origin, e.g. `https://api.example.com` |
 | `NEXT_PUBLIC_SOCKET_URL` | Usually same as API URL |
-| `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY` | Optional; for Stripe.js Elements later |
+| `NEXT_PUBLIC_PAYSTACK_PUBLIC_KEY` | Optional; for Paystack Inline JS later |
 
 ---
 
@@ -97,7 +92,7 @@ If cookies are blocked cross-site, the client still sends `Authorization: Bearer
 1. `GET /healthz`
 2. Register + login from the client
 3. `GET /api/categories` and Discover gigs
-4. Stripe test payment → webhook marks order paid (or Confirm payment after succeeded Intent)
+4. Paystack test payment → webhook or `/orders/callback` marks order paid
 5. Notification badge updates (Socket.IO) while logged in
 
 ---

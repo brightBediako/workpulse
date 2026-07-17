@@ -112,7 +112,7 @@ export default function OrdersPage() {
                       loading={busy === o.payment_intent}
                       onClick={() => confirmPaid(o.payment_intent)}
                     >
-                      Confirm payment
+                      Verify Paystack payment
                     </Button>
                   ) : null}
                 </div>

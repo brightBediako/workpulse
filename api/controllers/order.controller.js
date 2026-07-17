@@ -1,20 +1,25 @@
 import Order from "../models/order.model.js";
 import Gig from "../models/gig.model.js";
-import Stripe from "stripe";
+import User from "../models/user.model.js";
 import { createError } from "../middlewares/globalErrHandler.js";
 import {
   markOrderPaid,
   markOrderPaidByPaymentIntent,
 } from "../utils/orderPayment.js";
-
-// Initialize Stripe only if API key is provided
-const stripe = process.env.STRIPE_SECRET_KEY
-  ? new Stripe(process.env.STRIPE_SECRET_KEY)
-  : null;
+import {
+  createPaymentReference,
+  initializeTransaction,
+  isPaystackConfigured,
+  verifyTransaction,
+  verifyWebhookSignature,
+} from "../services/paystackService.js";
 
 const isOrderParty = (order, userId) =>
   String(order.buyerId) === String(userId) ||
   String(order.sellerId) === String(userId);
+
+const clientBaseUrl = () =>
+  (process.env.CLIENT_URL || "http://localhost:3000").replace(/\/$/, "");
 
 export const getOrders = async (req, res, next) => {
   try {
@@ -22,7 +27,7 @@ export const getOrders = async (req, res, next) => {
       ? { sellerId: req.userId }
       : { buyerId: req.userId };
 
-    // Paid engagements (isCompleted) plus any still-pending payment intents for the role
+    // Paid engagements (isCompleted) plus any still-pending payment for the role
     const orders = await Order.find({
       ...filter,
       $or: [{ isCompleted: true }, { status: "pending" }],
@@ -47,13 +52,17 @@ export const getOrder = async (req, res, next) => {
   }
 };
 
+/**
+ * Initialize Paystack checkout for an approved gig.
+ * Stores Paystack reference in order.payment_intent (legacy field name).
+ */
 export const intent = async (req, res, next) => {
   try {
-    if (!stripe) {
+    if (!isPaystackConfigured()) {
       return next(
         createError(
           500,
-          "Stripe is not configured. Please set STRIPE_SECRET_KEY in environment variables."
+          "Paystack is not configured. Please set PAYSTACK_SECRET_KEY in environment variables."
         )
       );
     }
@@ -73,16 +82,32 @@ export const intent = async (req, res, next) => {
       return next(createError(403, "You cannot order your own gig!"));
     }
 
-    const paymentIntent = await stripe.paymentIntents.create({
-      amount: Math.round(Number(gig.price) * 100),
-      currency: "usd",
-      automatic_payment_methods: {
-        enabled: true,
-      },
+    const buyer = await User.findById(req.userId).select("email");
+    if (!buyer?.email) {
+      return next(
+        createError(400, "Your account needs a valid email to pay with Paystack.")
+      );
+    }
+
+    const reference = createPaymentReference();
+    const callbackUrl = `${clientBaseUrl()}/orders/callback`;
+
+    const payment = await initializeTransaction({
+      email: buyer.email,
+      amountMajor: gig.price,
+      reference,
+      callbackUrl,
       metadata: {
         gigId: String(gig._id),
         buyerId: String(req.userId),
         sellerId: String(gig.userId),
+        custom_fields: [
+          {
+            display_name: "Gig",
+            variable_name: "gig_title",
+            value: gig.title,
+          },
+        ],
       },
     });
 
@@ -93,7 +118,7 @@ export const intent = async (req, res, next) => {
       price: gig.price,
       sellerId: gig.userId,
       buyerId: req.userId,
-      payment_intent: paymentIntent.id,
+      payment_intent: payment.reference,
       status: "pending",
       isCompleted: false,
       disputeStatus: "none",
@@ -102,36 +127,46 @@ export const intent = async (req, res, next) => {
     await newOrder.save();
 
     res.status(200).send({
-      clientSecret: paymentIntent.client_secret,
+      authorization_url: payment.authorization_url,
+      access_code: payment.access_code,
+      reference: payment.reference,
+      /** @deprecated Alias for reference — kept for older clients */
+      payment_intent: payment.reference,
       orderId: newOrder._id,
-      payment_intent: paymentIntent.id,
     });
   } catch (err) {
+    if (err.statusCode) {
+      return next(createError(err.statusCode, err.message));
+    }
     next(err);
   }
 };
 
 /**
- * Mark order paid after client-side Stripe confirmation.
- * Verifies PaymentIntent status with Stripe before updating (idempotent with webhook).
+ * Mark order paid after Paystack checkout.
+ * Verifies transaction status with Paystack before updating (idempotent with webhook).
+ * Body: { payment_intent | reference } — both mean the Paystack reference.
  */
 export const confirm = async (req, res, next) => {
   try {
-    if (!stripe) {
+    if (!isPaystackConfigured()) {
       return next(
         createError(
           500,
-          "Stripe is not configured. Please set STRIPE_SECRET_KEY in environment variables."
+          "Paystack is not configured. Please set PAYSTACK_SECRET_KEY in environment variables."
         )
       );
     }
 
-    const paymentIntentId = req.body.payment_intent;
-    if (!paymentIntentId) {
-      return next(createError(400, "payment_intent is required!"));
+    const reference =
+      req.body.reference || req.body.payment_intent || req.body.trxref;
+    if (!reference) {
+      return next(
+        createError(400, "payment reference is required (reference or payment_intent)!")
+      );
     }
 
-    const order = await Order.findOne({ payment_intent: paymentIntentId });
+    const order = await Order.findOne({ payment_intent: reference });
     if (!order) return next(createError(404, "Order not found!"));
 
     if (String(order.buyerId) !== String(req.userId) && !req.isAdmin) {
@@ -145,12 +180,12 @@ export const confirm = async (req, res, next) => {
       });
     }
 
-    const paymentIntent = await stripe.paymentIntents.retrieve(paymentIntentId);
-    if (paymentIntent.status !== "succeeded") {
+    const transaction = await verifyTransaction(reference);
+    if (transaction.status !== "success") {
       return next(
         createError(
           400,
-          `Payment not completed yet (Stripe status: ${paymentIntent.status}).`
+          `Payment not completed yet (Paystack status: ${transaction.status}).`
         )
       );
     }
@@ -165,60 +200,49 @@ export const confirm = async (req, res, next) => {
       feePercent: result.feePercent,
     });
   } catch (err) {
+    if (err.statusCode) {
+      return next(createError(err.statusCode, err.message));
+    }
     next(err);
   }
 };
 
 /**
- * Stripe webhook — primary paid confirmation path.
- * Requires raw body (mounted before express.json) + STRIPE_WEBHOOK_SECRET.
+ * Paystack webhook — primary paid confirmation path.
+ * Requires raw body (mounted before express.json) + PAYSTACK_SECRET_KEY for HMAC.
  */
-export const stripeWebhook = async (req, res) => {
-  if (!stripe) {
-    return res.status(500).send("Stripe is not configured.");
+export const paystackWebhook = async (req, res) => {
+  if (!isPaystackConfigured()) {
+    return res.status(500).send("Paystack is not configured.");
   }
 
-  const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET;
-  if (!webhookSecret) {
-    console.error("STRIPE_WEBHOOK_SECRET is not set");
-    return res.status(500).send("Webhook secret not configured.");
-  }
-
-  const signature = req.headers["stripe-signature"];
-  if (!signature) {
-    return res.status(400).send("Missing stripe-signature header.");
+  const signature = req.headers["x-paystack-signature"];
+  if (!verifyWebhookSignature(req.body, signature)) {
+    console.error("Paystack webhook signature verification failed");
+    return res.status(400).send("Invalid Paystack signature.");
   }
 
   let event;
   try {
-    event = stripe.webhooks.constructEvent(
-      req.body,
-      signature,
-      webhookSecret
-    );
+    event =
+      typeof req.body === "string" || Buffer.isBuffer(req.body)
+        ? JSON.parse(req.body.toString("utf8"))
+        : req.body;
   } catch (err) {
-    console.error("Stripe webhook signature verification failed:", err.message);
-    return res.status(400).send(`Webhook Error: ${err.message}`);
+    console.error("Paystack webhook: invalid JSON", err.message);
+    return res.status(400).send("Invalid JSON body.");
   }
 
   try {
-    switch (event.type) {
-      case "payment_intent.succeeded": {
-        const paymentIntent = event.data.object;
-        const result = await markOrderPaidByPaymentIntent(paymentIntent.id);
+    switch (event.event) {
+      case "charge.success": {
+        const reference = event.data?.reference;
+        const result = await markOrderPaidByPaymentIntent(reference);
         if (!result) {
           console.warn(
-            `Stripe webhook: no order for payment_intent ${paymentIntent.id}`
+            `Paystack webhook: no order for reference ${reference}`
           );
         }
-        break;
-      }
-      case "payment_intent.payment_failed": {
-        const paymentIntent = event.data.object;
-        console.warn(
-          `Stripe payment failed for ${paymentIntent.id}:`,
-          paymentIntent.last_payment_error?.message || "unknown"
-        );
         break;
       }
       default:
@@ -228,10 +252,13 @@ export const stripeWebhook = async (req, res) => {
 
     res.status(200).json({ received: true });
   } catch (err) {
-    console.error("Stripe webhook handler error:", err?.message || err);
+    console.error("Paystack webhook handler error:", err?.message || err);
     res.status(500).json({ message: "Webhook handler failed." });
   }
 };
+
+/** @deprecated Use paystackWebhook — kept export name for any external imports */
+export const stripeWebhook = paystackWebhook;
 
 /** Buyer or seller marks paid work as finished → status completed */
 export const completeOrder = async (req, res, next) => {

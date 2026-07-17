@@ -31,6 +31,7 @@ const OrderSchema = new Schema(
       type: Boolean,
       default: false,
     },
+    /** Paystack transaction reference (legacy field name from Stripe era). */
     payment_intent: {
       type: String,
       required: true,

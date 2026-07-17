@@ -419,7 +419,7 @@ export default function AccountPage() {
           <h2 className="font-section-title text-primary">Payment setup</h2>
           <p className="font-body-dense text-on-surface-variant">
             Where WorkPulse should send your payouts (mobile money or bank).
-            Automated withdrawals via Stripe Connect are not live yet — admins
+            Automated withdrawals via Paystack Transfers are not live yet — admins
             use these details for manual settlement.
           </p>
           <form

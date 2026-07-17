@@ -30,9 +30,10 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en">
+    <html lang="en" suppressHydrationWarning>
       <body
         className={`${plusJakarta.variable} ${ibmPlex.variable} antialiased bg-background text-on-surface font-sans`}
+        suppressHydrationWarning
       >
         <Providers>{children}</Providers>
       </body>

@@ -4,8 +4,8 @@ import { computeOrderFees } from "./orderFees.js";
 import { createNotification } from "../services/notificationService.js";
 
 /**
- * Idempotently mark an order paid after Stripe PaymentIntent success.
- * Shared by client confirm (after API status check) and webhook.
+ * Idempotently mark an order paid after Paystack charge success.
+ * Shared by client confirm (after verify API) and webhook.
  *
  * @returns {{ order, alreadyPaid: boolean, feePercent: number }}
  */
@@ -41,12 +41,12 @@ export const markOrderPaid = async (order) => {
 };
 
 /**
- * Find order by Stripe PaymentIntent id and mark paid if found.
+ * Find order by Paystack reference (stored in payment_intent) and mark paid if found.
  * @returns {null | { order, alreadyPaid, feePercent }}
  */
-export const markOrderPaidByPaymentIntent = async (paymentIntentId) => {
-  if (!paymentIntentId) return null;
-  const order = await Order.findOne({ payment_intent: paymentIntentId });
+export const markOrderPaidByPaymentIntent = async (paymentReference) => {
+  if (!paymentReference) return null;
+  const order = await Order.findOne({ payment_intent: paymentReference });
   if (!order) return null;
   return markOrderPaid(order);
 };

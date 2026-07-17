@@ -40,7 +40,7 @@ Last synced: Feature 06 (Phase 0–1).
 
 **Auth:** JWT in httpOnly cookie `accessToken` **or** header `Authorization: Bearer <token>` (cookie preferred if both present). Cookie clients must use `credentials: "include"`.
 
-**Required env:** `MONGO_URI`, `JWT_KEY`. Orders: `STRIPE_SECRET_KEY`. Optional: `PLATFORM_FEE_PERCENT` (default `10`), `COOKIE_SECURE`, `BCRYPT_SALT_ROUNDS`, email + `CLIENT_URL`.
+**Required env:** `MONGO_URI`, `JWT_KEY`. Orders: `PAYSTACK_SECRET_KEY`. Optional: `PAYSTACK_CURRENCY` (default `GHS`), `PLATFORM_FEE_PERCENT` (default `10`), `COOKIE_SECURE`, `BCRYPT_SALT_ROUNDS`, email + `CLIENT_URL` (Paystack callback base).
 
 **Domain map:** Buyer = customer · Seller (`isSeller`) = worker · Employer (`isEmployer`) = hiring account · Gig = service listing · Order = paid engagement.
 
@@ -258,28 +258,28 @@ Weekly windows for booking UX cues (not a hard lock on orders). `dayOfWeek`: 0 =
 ## Orders
 
 Mount: `/api/orders`  
-**Payment provider (Feature 15):** **Stripe** (not Paystack). Platform fee default **10%** (`PLATFORM_FEE_PERCENT`). Seller earnings = price − fee.
+**Payment provider:** **Paystack** (Stripe removed). Currency default **GHS** (`PAYSTACK_CURRENCY`). Amounts sent in pesewas (major × 100). Platform fee default **10%** (`PLATFORM_FEE_PERCENT`). Seller earnings = price − fee.
 
 **Lifecycle**
 
-1. `POST /create-payment-intent/:id` → `pending`, unpaid (Stripe PaymentIntent)  
-2. Stripe charges the buyer → **`POST /api/orders/webhook`** (signed) marks paid, **or** buyer `PUT /` with `payment_intent` after client confirm (server re-checks Intent status with Stripe)  
+1. `POST /create-payment-intent/:id` → initialize Paystack + `pending` unpaid order (stores reference in `payment_intent`)  
+2. Buyer pays on Paystack hosted page → **`POST /api/orders/webhook`** (`charge.success`, HMAC signature) marks paid, **or** buyer returns to `CLIENT_URL/orders/callback` / `PUT /` with `reference` (server verifies with Paystack)  
 3. `PUT /:id/complete` → `completed`  
 4. `POST /:id/dispute` → `disputed` / `disputeStatus: open`
 
-Webhook is the primary confirmation path. Client `PUT /` is a convenience that only succeeds when Stripe reports `succeeded` (idempotent with the webhook).
+Webhook is the primary confirmation path. Client confirm is a convenience that only succeeds when Paystack reports `status: success` (idempotent with the webhook).
 
 | Method | Path | Auth | Notes |
 | ------ | ---- | ---- | ----- |
 | GET | `/` | JWT | Buyer or seller orders (by `isSeller`) |
 | GET | `/:id` | JWT | Party or admin |
-| POST | `/create-payment-intent/:id` | JWT | Gig must be `approved`; not own gig. Returns `clientSecret`, `orderId`, `payment_intent` |
-| POST | `/webhook` | Stripe signature | Raw body; `payment_intent.succeeded` → mark paid. Requires `STRIPE_WEBHOOK_SECRET` |
-| PUT | `/` | JWT | Body `{ "payment_intent": "pi_…" }` — verifies Intent with Stripe, then marks paid |
+| POST | `/create-payment-intent/:id` | JWT | Gig must be `approved`; not own gig. Returns `authorization_url`, `reference`, `payment_intent` (alias), `orderId`, `access_code` |
+| POST | `/webhook` | Paystack signature | Raw body; `charge.success` → mark paid. HMAC SHA512 with `PAYSTACK_SECRET_KEY` (`x-paystack-signature`) |
+| PUT | `/` | JWT | Body `{ "reference" }` or `{ "payment_intent" }` — verifies with Paystack, then marks paid |
 | PUT | `/:id/complete` | JWT | Buyer or seller |
 | POST | `/:id/dispute` | JWT | Body `{ "reason", "description?" }` |
 
-**Webhook setup:** Stripe Dashboard → Webhooks → endpoint `https://<api-host>/api/orders/webhook` → event `payment_intent.succeeded` (optional: `payment_intent.payment_failed`). Local: `stripe listen --forward-to localhost:8000/api/orders/webhook`.
+**Webhook setup:** Paystack Dashboard → Settings → API Keys & Webhooks → URL `https://<api-host>/api/orders/webhook` → event `charge.success`. Local: use a tunnel (ngrok) or rely on callback verify.
 
 ---
 

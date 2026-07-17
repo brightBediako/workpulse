@@ -164,7 +164,7 @@ const userSchema = new Schema(
       type: Date,
       required: false,
     },
-    /** Payout destination for worker/employer withdrawals (manual until Stripe Connect) */
+    /** Payout destination for worker/employer withdrawals (manual until Paystack Transfers) */
     payoutMethod: {
       type: String,
       enum: ["none", "mobile_money", "bank"],

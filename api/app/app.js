@@ -7,7 +7,7 @@ import authRoute from "../routes/auth.route.js";
 import userRoute from "../routes/user.route.js";
 import gigRoute from "../routes/gig.route.js";
 import orderRoute from "../routes/order.route.js";
-import { stripeWebhook } from "../controllers/order.controller.js";
+import { paystackWebhook } from "../controllers/order.controller.js";
 import conversationRoute from "../routes/conversation.route.js";
 import messageRoute from "../routes/message.route.js";
 import reviewRoute from "../routes/review.route.js";
@@ -109,11 +109,11 @@ app.use((req, res, next) => {
   next();
 });
 
-// Stripe webhook needs the raw body for signature verification (before JSON parser)
+// Paystack webhook needs the raw body for HMAC signature verification (before JSON parser)
 app.post(
   "/api/orders/webhook",
   express.raw({ type: "application/json" }),
-  stripeWebhook
+  paystackWebhook
 );
 
 app.use(express.json());

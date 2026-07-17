@@ -8,7 +8,7 @@ Workforce and service marketplace — Express API + Next.js client (Pulse Field)
 
 ```bash
 cd api
-cp .env.example .env   # set MONGO_URI, JWT_KEY, Stripe keys
+cp .env.example .env   # set MONGO_URI, JWT_KEY, Paystack keys
 npm install
 npm run server         # http://localhost:8000
 ```

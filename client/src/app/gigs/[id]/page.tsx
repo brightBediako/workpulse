@@ -44,12 +44,19 @@ export default function GigDetailPage() {
     setOrderMsg("");
     try {
       const res = await api<{
-        clientSecret?: string;
-        orderId?: string;
+        authorization_url?: string;
+        reference?: string;
         payment_intent?: string;
+        orderId?: string;
       }>(`/api/orders/create-payment-intent/${id}`, { method: "POST" });
+
+      if (res.authorization_url) {
+        window.location.href = res.authorization_url;
+        return;
+      }
+
       setOrderMsg(
-        `Payment intent created (${res.payment_intent}). Complete payment in Stripe Checkout, then confirm from Orders.`
+        `Payment started (${res.reference || res.payment_intent}). Complete checkout, then confirm from Orders.`
       );
       router.push("/orders");
     } catch (err) {

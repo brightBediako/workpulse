@@ -5,7 +5,7 @@ info:
   description: |
     Express REST API for WorkPulse Connect. Human notes: `API_DOCUMENTATION.md`.
     Auth: httpOnly cookie `accessToken` or `Authorization: Bearer`.
-    Payments: Stripe Payment Intents + signed webhook.
+    Payments: Paystack initialize + verify + signed webhook (charge.success).
 servers:
   - url: http://localhost:8000
     description: Local
@@ -97,7 +97,7 @@ paths:
         "200": { description: Gig }
   /api/orders/create-payment-intent/{gigId}:
     post:
-      summary: Create Stripe PaymentIntent + pending order
+      summary: Initialize Paystack checkout + pending order
       security: [{ cookieAuth: [] }, { bearerAuth: [] }]
       parameters:
         - in: path
@@ -105,11 +105,11 @@ paths:
           required: true
           schema: { type: string }
       responses:
-        "200": { description: clientSecret, orderId, payment_intent }
+        "200": { description: authorization_url, reference, payment_intent, orderId }
   /api/orders/webhook:
     post:
-      summary: Stripe webhook (raw body, signature required)
-      description: Handles payment_intent.succeeded. Requires STRIPE_WEBHOOK_SECRET.
+      summary: Paystack webhook (raw body, x-paystack-signature required)
+      description: Handles charge.success. Signature = HMAC SHA512 of body with PAYSTACK_SECRET_KEY.
       responses:
         "200": { description: received }
   /api/orders:
@@ -119,16 +119,17 @@ paths:
       responses:
         "200": { description: Orders }
     put:
-      summary: Confirm payment (verifies Intent with Stripe)
+      summary: Confirm payment (verifies reference with Paystack)
       security: [{ cookieAuth: [] }, { bearerAuth: [] }]
       requestBody:
         content:
           application/json:
             schema:
               type: object
-              required: [payment_intent]
               properties:
-                payment_intent: { type: string }
+                reference: { type: string }
+                payment_intent: { type: string, description: Alias for Paystack reference }
+                trxref: { type: string }
       responses:
         "200": { description: Order paid }
   /api/jobs:

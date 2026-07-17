@@ -811,7 +811,8 @@ export const resolveDispute = async (req, res, next) => {
     // Handle refund if applicable
     if (refundAmount && refundAmount > 0) {
       order.status = "cancelled";
-      // Here you would integrate with Stripe to process refund
+      // Refunds would go through Paystack when implemented
+      // Here you would integrate with Paystack to process refund
     }
 
     if (adminNotes) {
@@ -966,12 +967,12 @@ export const getEarningsReport = async (req, res, next) => {
 };
 
 export const processWithdrawal = async (req, res, next) => {
-  // Not supported yet — no payout / Stripe Connect integration.
+  // Not supported yet — no payout / Paystack Transfer integration.
   // Kept as an admin route so clients get a clear 501 instead of a fake success.
   return next(
     createError(
       501,
-      "Seller withdrawals are not supported yet. Payouts will be added when a payment rail (e.g. Stripe Connect or Paystack) is configured."
+      "Seller withdrawals are not supported yet. Payouts will be added when Paystack Transfers (or similar) is configured."
     )
   );
 };

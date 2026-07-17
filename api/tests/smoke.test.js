@@ -1,5 +1,6 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
+import crypto from "node:crypto";
 import {
   normalizeCategorySlug,
   isValidCategory,
@@ -7,6 +8,10 @@ import {
 import { computeOrderFees, getPlatformFeePercent } from "../utils/orderFees.js";
 import { markOrderPaid } from "../utils/orderPayment.js";
 import { createError } from "../middlewares/globalErrHandler.js";
+import {
+  toMinorUnits,
+  verifyWebhookSignature,
+} from "../services/paystackService.js";
 
 describe("gig categories", () => {
   it("normalizes known slugs and labels", () => {
@@ -55,5 +60,23 @@ describe("createError", () => {
     const err = createError(403, "Forbidden");
     assert.equal(err.statusCode, 403);
     assert.equal(err.message, "Forbidden");
+  });
+});
+
+describe("paystack helpers", () => {
+  it("converts major units to pesewas/kobo", () => {
+    assert.equal(toMinorUnits(100), 10000);
+    assert.equal(toMinorUnits(12.5), 1250);
+  });
+
+  it("verifies webhook HMAC signatures", () => {
+    process.env.PAYSTACK_SECRET_KEY = "test_secret";
+    const body = Buffer.from(JSON.stringify({ event: "charge.success" }));
+    const good = crypto
+      .createHmac("sha512", "test_secret")
+      .update(body)
+      .digest("hex");
+    assert.equal(verifyWebhookSignature(body, good), true);
+    assert.equal(verifyWebhookSignature(body, "bad"), false);
   });
 });

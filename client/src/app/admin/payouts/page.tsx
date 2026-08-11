@@ -199,7 +199,7 @@ function AdminPayoutsInner() {
                     </p>
                   </div>
                   <p className="font-semibold text-primary">
-                    {r.user?.username || r.userId || "Worker"}
+                    {r.user?.username || r.user?._id || "Worker"}
                   </p>
                   <p className="font-body-dense text-on-surface-variant">
                     {r.user?.email || ""}

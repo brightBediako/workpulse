@@ -36,7 +36,8 @@ const buildCorsOrigin = () => {
     if (!origin) return callback(null, true);
 
     const allowedOrigins = [
-      process.env.CLIENT_URL,
+      "https://workpulse-omega.vercel.app",
+      (process.env.CLIENT_URL || "").replace(/\/$/, ""),
       "http://localhost:5173",
       "http://localhost:3000",
       "http://127.0.0.1:5173",

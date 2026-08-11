@@ -19,11 +19,12 @@ Auth uses JWT cookie (`credentials: "include"`) plus Bearer token stored after l
 
 ## Deploy to Vercel
 
-1. Deploy the **API** somewhere reachable over HTTPS (see `../docs/deploy.md`).
+1. API is on Render: `https://workpulse-lbdp.onrender.com`
 2. In Vercel: Import repo → **Root Directory = `client`**.
 3. Set env:
-   - `NEXT_PUBLIC_API_URL` = `https://<your-api-host>` (no trailing slash)
-   - `NEXT_PUBLIC_SOCKET_URL` = same (optional)
-4. Deploy, then set API `CLIENT_URL` to the Vercel URL (Paystack callbacks + emails).
+   - `NEXT_PUBLIC_API_URL` = `https://workpulse-lbdp.onrender.com`
+   - `NEXT_PUBLIC_SOCKET_URL` = same
+4. Live frontend: `https://workpulse-omega.vercel.app`
+5. On Render, set `CLIENT_URL` to that Vercel URL (Paystack callbacks + emails).
 
 Full checklist: `../docs/deploy.md`.

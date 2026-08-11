@@ -1,6 +1,8 @@
 const API_URL =
   process.env.NEXT_PUBLIC_API_URL?.replace(/\/$/, "") ||
-  "http://localhost:8000";
+  (process.env.VERCEL
+    ? "https://workpulse-lbdp.onrender.com"
+    : "http://localhost:8000");
 
 const SOCKET_URL =
   process.env.NEXT_PUBLIC_SOCKET_URL?.replace(/\/$/, "") || API_URL;

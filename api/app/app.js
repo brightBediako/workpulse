@@ -41,12 +41,17 @@ const corsOptions = {
     if (!origin) return callback(null, true);
 
     const allowedOrigins = [
-      "https://service-two-sand.vercel.app",
+      "https://workpulse-omega.vercel.app",
       "http://localhost:5173",
       "http://localhost:3000",
       "http://127.0.0.1:5173",
       "http://127.0.0.1:3000",
     ];
+
+    const clientUrl = (process.env.CLIENT_URL || "").replace(/\/$/, "");
+    if (clientUrl && !allowedOrigins.includes(clientUrl)) {
+      allowedOrigins.push(clientUrl);
+    }
 
     // Check if origin is in allowed list
     if (allowedOrigins.indexOf(origin) !== -1) {

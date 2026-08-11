@@ -4,17 +4,44 @@ Staging/production checklist for the **API** (`api/`) and **client** (`client/` 
 
 ---
 
+## Live production
+
+| Piece | URL |
+| ----- | --- |
+| Frontend (Vercel) | https://workpulse-omega.vercel.app |
+| API + Socket.IO (Render) | https://workpulse-lbdp.onrender.com |
+| Health | https://workpulse-lbdp.onrender.com/healthz |
+| Paystack webhook | https://workpulse-lbdp.onrender.com/api/orders/webhook |
+
+Vercel hosts **only** the Next.js client. The Express API stays on Render.
+
+### Required env (already documented below)
+
+**Vercel (`client`):**
+
+- `NEXT_PUBLIC_API_URL=https://workpulse-lbdp.onrender.com`
+- `NEXT_PUBLIC_SOCKET_URL=https://workpulse-lbdp.onrender.com`
+
+**Render (`api`):**
+
+- `CLIENT_URL=https://workpulse-omega.vercel.app`
+- `COOKIE_SECURE=true`
+- `NODE_ENV=production`
+- Plus `MONGO_URI`, `JWT_KEY`, `PAYSTACK_SECRET_KEY`, etc.
+
+After changing `NEXT_PUBLIC_*` on Vercel, **redeploy** (they are inlined at build time).
+
+---
+
 ## Architecture
 
 | Piece | Default local | Typical host |
 | ----- | ------------- | ------------ |
-| API + Socket.IO | `http://localhost:8000` | Render, Railway, or VPS (Node) |
-| Client (Next.js) | `http://localhost:3000` | **Vercel** |
+| API + Socket.IO | `http://localhost:8000` | Render (`workpulse-lbdp`) |
+| Client (Next.js) | `http://localhost:3000` | Vercel (`workpulse-omega`) |
 | MongoDB | local / Atlas | Atlas URI in `MONGO_URI` |
 
-**Important:** Vercel hosts only the Next.js **client**. Deploy the Express API separately first — the client needs a live `NEXT_PUBLIC_API_URL`.
-
-CORS on the API already allows `localhost:3000` and `*.vercel.app`. Add a custom domain to `api/app/app.js` `allowedOrigins` if you use one.
+CORS allows `https://workpulse-omega.vercel.app`, `CLIENT_URL`, and `*.vercel.app`.
 
 ---
 
@@ -80,7 +107,7 @@ Set for **Production** (and Preview if the API allows `*.vercel.app`):
 
 | Variable | Example | Notes |
 | -------- | ------- | ----- |
-| `NEXT_PUBLIC_API_URL` | `https://your-api.onrender.com` | No trailing slash. **Inlined at build time** — redeploy after changing. |
+| `NEXT_PUBLIC_API_URL` | `https://workpulse-lbdp.onrender.com` | No trailing slash. **Inlined at build time** — redeploy after changing. |
 | `NEXT_PUBLIC_SOCKET_URL` | same as API URL | Optional; defaults to API URL |
 | `NEXT_PUBLIC_PAYSTACK_PUBLIC_KEY` | `pk_live_…` | Optional |
 

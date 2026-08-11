@@ -18,6 +18,7 @@ type PayoutAccountSnap = {
 
 type PayoutRequest = {
   id: string;
+  userId?: string;
   amount: number;
   currency?: string;
   status: string;

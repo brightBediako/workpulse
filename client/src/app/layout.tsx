@@ -1,18 +1,31 @@
 import type { Metadata } from "next";
-import { Plus_Jakarta_Sans, IBM_Plex_Mono } from "next/font/google";
+import localFont from "next/font/local";
 import { Providers } from "./providers";
 import "./globals.css";
 
-const plusJakarta = Plus_Jakarta_Sans({
+/** Self-hosted — avoids Google Fonts fetch during Vercel/CI builds. */
+const plusJakarta = localFont({
+  src: "../fonts/PlusJakartaSans-latin-wght-normal.woff2",
   variable: "--font-plus-jakarta",
-  subsets: ["latin"],
-  weight: ["400", "500", "600", "700", "800"],
+  weight: "100 800",
+  display: "swap",
 });
 
-const ibmPlex = IBM_Plex_Mono({
+const ibmPlex = localFont({
+  src: [
+    {
+      path: "../fonts/IBMPlexMono-latin-400-normal.woff2",
+      weight: "400",
+      style: "normal",
+    },
+    {
+      path: "../fonts/IBMPlexMono-latin-600-normal.woff2",
+      weight: "600",
+      style: "normal",
+    },
+  ],
   variable: "--font-ibm-plex",
-  subsets: ["latin"],
-  weight: ["400", "600"],
+  display: "swap",
 });
 
 export const metadata: Metadata = {

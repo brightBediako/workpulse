@@ -16,3 +16,14 @@ Auth uses JWT cookie (`credentials: "include"`) plus Bearer token stored after l
 
 - `npm run dev` — Next.js dev server
 - `npm run build` / `npm start` — production
+
+## Deploy to Vercel
+
+1. Deploy the **API** somewhere reachable over HTTPS (see `../docs/deploy.md`).
+2. In Vercel: Import repo → **Root Directory = `client`**.
+3. Set env:
+   - `NEXT_PUBLIC_API_URL` = `https://<your-api-host>` (no trailing slash)
+   - `NEXT_PUBLIC_SOCKET_URL` = same (optional)
+4. Deploy, then set API `CLIENT_URL` to the Vercel URL (Paystack callbacks + emails).
+
+Full checklist: `../docs/deploy.md`.

@@ -2,9 +2,15 @@ const API_URL =
   process.env.NEXT_PUBLIC_API_URL?.replace(/\/$/, "") ||
   "http://localhost:8000";
 
+const SOCKET_URL =
+  process.env.NEXT_PUBLIC_SOCKET_URL?.replace(/\/$/, "") || API_URL;
+
 const TOKEN_KEY = "workpulse_token";
 
 export const getApiUrl = () => API_URL;
+
+/** Socket.IO base URL (defaults to API origin). */
+export const getSocketUrl = () => SOCKET_URL;
 
 export const getStoredToken = (): string | null => {
   if (typeof window === "undefined") return null;

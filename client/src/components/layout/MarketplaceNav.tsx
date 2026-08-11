@@ -5,7 +5,7 @@ import { usePathname } from "next/navigation";
 import { Bell, Menu, X } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useAuth } from "@/lib/auth";
-import { api, getApiUrl, getStoredToken } from "@/lib/api";
+import { api, getSocketUrl, getStoredToken } from "@/lib/api";
 import { io } from "socket.io-client";
 import { WorkspaceSwitcher } from "./WorkspaceSwitcher";
 import { workspacesForUser } from "@/lib/workspace";
@@ -34,7 +34,7 @@ export function MarketplaceNav() {
       .catch(() => {});
 
     const token = getStoredToken();
-    const socket = io(getApiUrl(), {
+    const socket = io(getSocketUrl(), {
       auth: token ? { token } : undefined,
       withCredentials: true,
     });

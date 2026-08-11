@@ -24,4 +24,9 @@ npm install
 npm run dev            # http://localhost:3000
 ```
 
+### Production (Vercel client)
+
+Set Vercel **Root Directory** to `client`, add `NEXT_PUBLIC_API_URL` to your live API, then deploy.  
+API must be hosted separately (Render / Railway / VPS). Details: [`docs/deploy.md`](docs/deploy.md).
+
 Docs: `api/API_DOCUMENTATION.md` · `api/openapi.yaml` · `docs/deploy.md` · `context/`

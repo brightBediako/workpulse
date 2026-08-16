@@ -447,6 +447,13 @@ All routes: `verifyToken` + `verifyAdmin`.
 
 Approve/reject create seller notifications.
 
+### Jobs & service requests
+
+| Method | Path | Notes |
+| ------ | ---- | ----- |
+| GET | `/jobs` | Job posts + applications + linked orders (`?page`, `?limit`, `?status`) |
+| GET | `/service-requests` | Customer demand requests + worker + order (`?page`, `?limit`, `?status`) |
+
 ### Orders
 
 | Method | Path |

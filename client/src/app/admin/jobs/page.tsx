@@ -78,19 +78,31 @@ export default function AdminJobsPage() {
   useEffect(() => {
     setLoading(true);
     setError("");
-    Promise.all([
+    Promise.allSettled([
       api<{ jobs: AdminJob[] }>("/api/admin/jobs?limit=50"),
       api<{ requests: AdminServiceRequest[] }>(
         "/api/admin/service-requests?limit=50"
       ),
     ])
-      .then(([jobsRes, reqRes]) => {
-        setJobs(jobsRes.jobs || []);
-        setRequests(reqRes.requests || []);
+      .then(([jobsResult, requestsResult]) => {
+        if (jobsResult.status === "fulfilled") {
+          setJobs(jobsResult.value.jobs || []);
+        } else {
+          const err = jobsResult.reason;
+          setError(
+            err instanceof ApiError ? err.message : "Could not load job posts"
+          );
+        }
+
+        if (requestsResult.status === "fulfilled") {
+          setRequests(requestsResult.value.requests || []);
+        } else {
+          const err = requestsResult.reason;
+          const msg =
+            err instanceof ApiError ? err.message : "Could not load requests";
+          setError((prev) => (prev ? `${prev}. ${msg}` : msg));
+        }
       })
-      .catch((err) =>
-        setError(err instanceof ApiError ? err.message : "Could not load data")
-      )
       .finally(() => setLoading(false));
   }, []);
 

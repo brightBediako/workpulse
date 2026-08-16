@@ -86,6 +86,17 @@ describe("paystack helpers", () => {
   });
 });
 
+describe("admin routes", () => {
+  it("registers jobs and service-requests list endpoints", async () => {
+    const adminRoute = (await import("../routes/admin.route.js")).default;
+    const paths = adminRoute.stack
+      .filter((layer) => layer.route)
+      .map((layer) => layer.route.path);
+    assert.ok(paths.includes("/jobs"));
+    assert.ok(paths.includes("/service-requests"));
+  });
+});
+
 describe("payout validation", () => {
   it("requires MoMo numbers to be exactly 10 digits", () => {
     assert.equal(isValidMomoNumber("0598866379"), true);

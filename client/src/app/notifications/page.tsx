@@ -76,10 +76,24 @@ export default function NotificationsPage() {
                   n.read ? "bg-surface" : "bg-surface-container-lowest"
                 }`}
               >
-                <p className="font-body-dense text-on-surface">{n.message}</p>
-                <p className="font-label-caps text-on-surface-variant mt-xs">
-                  {n.type}
-                </p>
+                {n.link ? (
+                  <Link
+                    href={n.link}
+                    className="block hover:opacity-90"
+                  >
+                    <p className="font-body-dense text-on-surface">{n.message}</p>
+                    <p className="font-label-caps text-on-surface-variant mt-xs">
+                      {n.type}
+                    </p>
+                  </Link>
+                ) : (
+                  <>
+                    <p className="font-body-dense text-on-surface">{n.message}</p>
+                    <p className="font-label-caps text-on-surface-variant mt-xs">
+                      {n.type}
+                    </p>
+                  </>
+                )}
               </li>
             ))}
           </ul>

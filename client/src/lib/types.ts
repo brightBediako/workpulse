@@ -117,3 +117,24 @@ export type Job = {
   employerId?: string;
   location?: { city?: string; region?: string; country?: string };
 };
+
+export type ServiceRequest = {
+  _id: string;
+  customerId: string;
+  title: string;
+  description: string;
+  cat: string;
+  status: string;
+  budget?: number;
+  currency?: string;
+  preferredDate?: string;
+  sellerId?: string;
+  gigId?: string;
+  acceptedBy?: string;
+  acceptedAt?: string;
+  rejectedAt?: string;
+  responseNote?: string;
+  location?: { city?: string; region?: string; country?: string; area?: string };
+  createdAt?: string;
+  updatedAt?: string;
+};

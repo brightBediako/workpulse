@@ -127,6 +127,16 @@ export default function GigDetailPage() {
                 >
                   Order / Pay
                 </Button>
+                {user && String(gig.userId) !== String(user._id) ? (
+                  <Link
+                    href={`/service-requests?create=1&gigId=${id}&sellerId=${gig.userId}`}
+                    className="block"
+                  >
+                    <Button variant="outline" className="w-full rounded-xl">
+                      Request custom work
+                    </Button>
+                  </Link>
+                ) : null}
                 <Link
                   href="/discover"
                   className="block text-center font-body-dense text-primary-container hover:underline"

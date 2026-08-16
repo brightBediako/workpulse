@@ -12,6 +12,7 @@ import { workspacesForUser } from "@/lib/workspace";
 
 const links = [
   { href: "/discover", label: "Discover" },
+  { href: "/service-requests", label: "Requests" },
   { href: "/orders", label: "Orders" },
   { href: "/messages", label: "Messages" },
   { href: "/jobs", label: "Jobs" },

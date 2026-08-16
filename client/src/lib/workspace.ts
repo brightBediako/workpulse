@@ -27,7 +27,7 @@ export function workspacesForUser(user: User | null): Workspace[] {
     list.push({
       id: "worker",
       label: "Worker",
-      description: "Manage your gigs",
+      description: "Manage gigs & request inbox",
       href: "/dashboard/gigs",
     });
   }

@@ -1,7 +1,13 @@
 import ServiceRequest from "../models/serviceRequest.model.js";
+import Order from "../models/order.model.js";
 import User from "../models/user.model.js";
 import Gig from "../models/gig.model.js";
 import { createError } from "../middlewares/globalErrHandler.js";
+import {
+  createPaymentReference,
+  initializeTransaction,
+  isPaystackConfigured,
+} from "../services/paystackService.js";
 import {
   GIG_CATEGORY_SLUGS,
   normalizeCategorySlug,
@@ -22,6 +28,25 @@ const assertCustomerOwner = (doc, userId) => {
   if (String(doc.customerId) !== String(userId)) {
     throw createError(403, "You can manage only your own service requests.");
   }
+};
+
+const clientBaseUrl = () =>
+  (process.env.CLIENT_URL || "http://localhost:3000").replace(/\/$/, "");
+
+const resolveRequestPaymentAmount = (doc, bodyAmount) => {
+  if (bodyAmount !== undefined && bodyAmount !== null && bodyAmount !== "") {
+    const n = Number(bodyAmount);
+    if (!Number.isFinite(n) || n <= 0) {
+      throw createError(400, "amount must be a positive number.");
+    }
+    return n;
+  }
+  if (doc.agreedAmount != null && doc.agreedAmount > 0) return doc.agreedAmount;
+  if (doc.budget != null && doc.budget > 0) return doc.budget;
+  throw createError(
+    400,
+    "Payment amount required. Set budget or provide amount on approve-work."
+  );
 };
 
 const requireSeller = async (userId) => {
@@ -458,15 +483,209 @@ export const rejectServiceRequest = async (req, res, next) => {
   }
 };
 
-/** PUT /api/service-requests/:id/complete — customer or accepted seller */
-export const completeServiceRequest = async (req, res, next) => {
+/** PUT /api/service-requests/:id/submit-work — worker marks service done */
+export const submitServiceRequestWork = async (req, res, next) => {
   try {
+    await requireSeller(req.userId);
     const doc = await ServiceRequest.findById(req.params.id);
     if (!doc) return next(createError(404, "Service request not found!"));
 
     if (doc.status !== "accepted") {
       return next(
-        createError(400, "Only accepted requests can be marked completed.")
+        createError(400, "Only accepted requests can have work submitted.")
+      );
+    }
+    if (String(doc.acceptedBy) !== String(req.userId)) {
+      return next(createError(403, "Only the assigned worker can submit work."));
+    }
+
+    doc.status = "work_submitted";
+    doc.workSubmittedAt = new Date();
+    if (typeof req.body.note === "string") {
+      doc.workNote = req.body.note.trim().slice(0, 2000) || undefined;
+    }
+    await doc.save();
+
+    await createNotification({
+      userId: doc.customerId,
+      type: "service_work_submitted",
+      message: `Work submitted for your request: ${doc.title}`,
+      link: `/service-requests/${doc._id}`,
+    });
+
+    res.status(200).json({
+      message: "Work submitted for customer approval.",
+      request: doc,
+    });
+  } catch (err) {
+    next(err.statusCode ? err : err);
+  }
+};
+
+/** PUT /api/service-requests/:id/approve-work — customer approves completed work */
+export const approveServiceRequestWork = async (req, res, next) => {
+  try {
+    const doc = await ServiceRequest.findById(req.params.id);
+    if (!doc) return next(createError(404, "Service request not found!"));
+    assertCustomerOwner(doc, req.userId);
+
+    if (doc.status !== "work_submitted") {
+      return next(createError(400, "Only submitted work can be approved."));
+    }
+
+    let agreedAmount;
+    try {
+      agreedAmount = resolveRequestPaymentAmount(doc, req.body.amount);
+    } catch (err) {
+      return next(err.statusCode ? err : err);
+    }
+
+    doc.status = "work_approved";
+    doc.workApprovedAt = new Date();
+    doc.agreedAmount = agreedAmount;
+    await doc.save();
+
+    await createNotification({
+      userId: doc.acceptedBy || doc.sellerId,
+      type: "service_work_approved",
+      message: `Your work was approved for: ${doc.title}. Awaiting customer payment.`,
+      link: `/service-requests/${doc._id}`,
+    });
+
+    res.status(200).json({
+      message: "Work approved. Proceed to payment.",
+      request: doc,
+      agreedAmount,
+    });
+  } catch (err) {
+    next(err.statusCode ? err : err);
+  }
+};
+
+/** POST /api/service-requests/:id/payment-intent — customer pays worker via Paystack */
+export const createServiceRequestPaymentIntent = async (req, res, next) => {
+  try {
+    if (!isPaystackConfigured()) {
+      return next(
+        createError(500, "Paystack is not configured. Set PAYSTACK_SECRET_KEY.")
+      );
+    }
+
+    const doc = await ServiceRequest.findById(req.params.id);
+    if (!doc) return next(createError(404, "Service request not found!"));
+    assertCustomerOwner(doc, req.userId);
+
+    if (doc.status !== "work_approved") {
+      return next(createError(400, "Work must be approved before payment."));
+    }
+    if (doc.orderId) {
+      const existing = await Order.findById(doc.orderId);
+      if (existing?.isCompleted) {
+        return next(createError(400, "This request is already paid."));
+      }
+    }
+
+    const customer = await User.findById(req.userId).select("email");
+    if (!customer?.email) {
+      return next(
+        createError(400, "Your account needs a valid email to pay with Paystack.")
+      );
+    }
+
+    const sellerId = doc.acceptedBy || doc.sellerId;
+    if (!sellerId) {
+      return next(createError(400, "No worker assigned to this request."));
+    }
+
+    let amount;
+    try {
+      amount = resolveRequestPaymentAmount(doc, req.body.amount);
+    } catch (err) {
+      return next(err.statusCode ? err : err);
+    }
+
+    doc.agreedAmount = amount;
+    await doc.save();
+
+    const reference = createPaymentReference();
+    const callbackUrl = `${clientBaseUrl()}/orders/callback`;
+
+    const payment = await initializeTransaction({
+      email: customer.email,
+      amountMajor: amount,
+      reference,
+      callbackUrl,
+      metadata: {
+        serviceRequestId: String(doc._id),
+        buyerId: String(req.userId),
+        sellerId: String(sellerId),
+        custom_fields: [
+          {
+            display_name: "Request",
+            variable_name: "request_title",
+            value: doc.title,
+          },
+        ],
+      },
+    });
+
+    let order;
+    if (doc.orderId) {
+      order = await Order.findById(doc.orderId);
+      if (order && !order.isCompleted) {
+        order.payment_intent = payment.reference;
+        order.price = amount;
+        order.title = doc.title;
+        await order.save();
+      }
+    }
+
+    if (!order) {
+      order = await Order.create({
+        sourceType: "service_request",
+        serviceRequestId: String(doc._id),
+        title: doc.title,
+        price: amount,
+        sellerId: String(sellerId),
+        buyerId: String(req.userId),
+        payment_intent: payment.reference,
+        status: "pending",
+        isCompleted: false,
+        disputeStatus: "none",
+      });
+      doc.orderId = String(order._id);
+      await doc.save();
+    }
+
+    res.status(200).json({
+      authorization_url: payment.authorization_url,
+      access_code: payment.access_code,
+      reference: payment.reference,
+      payment_intent: payment.reference,
+      orderId: order._id,
+      amount,
+      currency: doc.currency || "GHS",
+    });
+  } catch (err) {
+    if (err.statusCode) {
+      return next(createError(err.statusCode, err.message));
+    }
+    next(err);
+  }
+};
+
+/** PUT /api/service-requests/:id/complete — after payment (paid → completed) */
+export const completeServiceRequest = async (req, res, next) => {
+  try {
+    const doc = await ServiceRequest.findById(req.params.id);
+    if (!doc) return next(createError(404, "Service request not found!"));
+
+    if (doc.status !== "paid") {
+      return next(
+        createError(
+          400,
+          "Only paid requests can be marked completed. Use submit-work → approve → pay first."
+        )
       );
     }
 
@@ -474,7 +693,7 @@ export const completeServiceRequest = async (req, res, next) => {
     const isAcceptedSeller = String(doc.acceptedBy) === String(req.userId);
     if (!isCustomer && !isAcceptedSeller && !req.isAdmin) {
       return next(
-        createError(403, "Only the customer or accepted worker can complete this.")
+        createError(403, "Only the customer or assigned worker can complete this.")
       );
     }
 
@@ -486,7 +705,7 @@ export const completeServiceRequest = async (req, res, next) => {
       await createNotification({
         userId: notifyId,
         type: "general",
-        message: `Service request marked completed: ${doc.title}`,
+        message: `Service request closed: ${doc.title}`,
         link: `/service-requests/${doc._id}`,
       });
     }

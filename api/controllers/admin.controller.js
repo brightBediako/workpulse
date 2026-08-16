@@ -2,6 +2,7 @@ import User from "../models/user.model.js";
 import Gig from "../models/gig.model.js";
 import Job from "../models/job.model.js";
 import Application from "../models/application.model.js";
+import ServiceRequest from "../models/serviceRequest.model.js";
 import Order from "../models/order.model.js";
 import Review from "../models/review.model.js";
 import PayoutRequest from "../models/payoutRequest.model.js";
@@ -1209,6 +1210,79 @@ export const getAdminJobs = async (req, res, next) => {
         totalPages: Math.ceil(totalJobs / take) || 1,
         totalJobs,
         hasNext: skip + take < totalJobs,
+        hasPrev: skip > 0,
+      },
+    });
+  } catch (err) {
+    next(err);
+  }
+};
+
+/** GET /api/admin/service-requests — all requests with customer, worker, payment */
+export const getAdminServiceRequests = async (req, res, next) => {
+  try {
+    const { page = 1, limit = 20, status } = req.query;
+    const skip = (Math.max(Number(page), 1) - 1) * Math.min(Number(limit) || 20, 100);
+    const take = Math.min(Math.max(Number(limit) || 20, 1), 100);
+
+    const filter = {};
+    if (status) filter.status = status;
+
+    const [requests, total] = await Promise.all([
+      ServiceRequest.find(filter).sort({ createdAt: -1 }).skip(skip).limit(take),
+      ServiceRequest.countDocuments(filter),
+    ]);
+
+    const userIds = new Set();
+    const orderIds = new Set();
+    for (const r of requests) {
+      userIds.add(String(r.customerId));
+      if (r.acceptedBy) userIds.add(String(r.acceptedBy));
+      if (r.sellerId) userIds.add(String(r.sellerId));
+      if (r.orderId) orderIds.add(String(r.orderId));
+    }
+
+    const [users, orders] = await Promise.all([
+      User.find({ _id: { $in: [...userIds] } }).select(
+        "username email phone isSeller"
+      ),
+      orderIds.size ? Order.find({ _id: { $in: [...orderIds] } }) : [],
+    ]);
+
+    const userMap = Object.fromEntries(
+      users.map((u) => [
+        String(u._id),
+        {
+          _id: String(u._id),
+          username: u.username,
+          email: u.email,
+          phone: u.phone,
+          isSeller: u.isSeller,
+        },
+      ])
+    );
+    const orderMap = Object.fromEntries(
+      orders.map((o) => [String(o._id), o.toObject()])
+    );
+
+    const payload = requests.map((r) => {
+      const plain = r.toObject();
+      const workerId = plain.acceptedBy || plain.sellerId;
+      return {
+        ...plain,
+        customer: userMap[String(plain.customerId)] || null,
+        worker: workerId ? userMap[String(workerId)] || null : null,
+        order: plain.orderId ? orderMap[String(plain.orderId)] || null : null,
+      };
+    });
+
+    res.status(200).json({
+      requests: payload,
+      pagination: {
+        currentPage: Math.max(Number(page), 1),
+        totalPages: Math.ceil(total / take) || 1,
+        totalRequests: total,
+        hasNext: skip + take < total,
         hasPrev: skip > 0,
       },
     });

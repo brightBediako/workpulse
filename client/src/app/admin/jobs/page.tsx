@@ -36,7 +36,6 @@ type AdminApplication = {
 type AdminJob = {
   _id: string;
   title: string;
-  description?: string;
   cat?: string;
   status?: string;
   budgetMin?: number;
@@ -47,21 +46,50 @@ type AdminJob = {
   applications?: AdminApplication[];
 };
 
+type AdminServiceRequest = {
+  _id: string;
+  title: string;
+  cat?: string;
+  status?: string;
+  budget?: number;
+  agreedAmount?: number;
+  currency?: string;
+  workNote?: string;
+  location?: { city?: string; region?: string };
+  customer?: AdminUser | null;
+  worker?: AdminUser | null;
+  order?: AdminOrder | null;
+};
+
 function money(n?: number, currency = "GHS") {
   if (n == null || Number.isNaN(n)) return "—";
   return `${currency} ${Number(n).toLocaleString()}`;
 }
 
+type Tab = "jobs" | "requests";
+
 export default function AdminJobsPage() {
+  const [tab, setTab] = useState<Tab>("jobs");
   const [jobs, setJobs] = useState<AdminJob[]>([]);
+  const [requests, setRequests] = useState<AdminServiceRequest[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
   useEffect(() => {
-    api<{ jobs: AdminJob[] }>("/api/admin/jobs?limit=50")
-      .then((res) => setJobs(res.jobs || []))
+    setLoading(true);
+    setError("");
+    Promise.all([
+      api<{ jobs: AdminJob[] }>("/api/admin/jobs?limit=50"),
+      api<{ requests: AdminServiceRequest[] }>(
+        "/api/admin/service-requests?limit=50"
+      ),
+    ])
+      .then(([jobsRes, reqRes]) => {
+        setJobs(jobsRes.jobs || []);
+        setRequests(reqRes.requests || []);
+      })
       .catch((err) =>
-        setError(err instanceof ApiError ? err.message : "Could not load jobs")
+        setError(err instanceof ApiError ? err.message : "Could not load data")
       )
       .finally(() => setLoading(false));
   }, []);
@@ -74,122 +102,131 @@ export default function AdminJobsPage() {
     return <p className="text-error">{error}</p>;
   }
 
-  if (jobs.length === 0) {
-    return <EmptyState title="No job posts yet" />;
-  }
-
   return (
     <div className="space-y-lg">
       <div>
-        <h1 className="font-page-title text-primary">Jobs & payments</h1>
+        <h1 className="font-page-title text-primary">Jobs & service requests</h1>
         <p className="font-body-dense text-on-surface-variant mt-xs">
-          All employer job posts, assigned workers, and Paystack payment records.
+          Employer jobs, customer service requests, workers, and Paystack payments.
         </p>
       </div>
 
-      <div className="space-y-md">
-        {jobs.map((job) => (
-          <article
-            key={job._id}
-            className="p-md border border-outline-variant rounded-card bg-surface-container-lowest space-y-md"
-          >
-            <div className="flex flex-wrap items-start justify-between gap-sm">
-              <div>
-                <h2 className="font-section-title text-primary">{job.title}</h2>
-                <p className="font-label-caps text-on-surface-variant mt-xs">
-                  {job.cat}
-                  {job.location?.city ? ` · ${job.location.city}` : ""}
-                  {job.budgetMin != null || job.budgetMax != null
-                    ? ` · Budget ${money(job.budgetMin, job.currency)}–${money(job.budgetMax, job.currency)}`
-                    : ""}
-                </p>
-              </div>
-              <StatusChip status={job.status} />
-            </div>
-
-            <div className="font-body-dense text-on-surface-variant">
-              <span className="font-label-caps">Employer</span>
-              <p>
-                {job.employer?.username || "—"}
-                {job.employer?.email ? ` · ${job.employer.email}` : ""}
-              </p>
-            </div>
-
-            {(job.applications?.length ?? 0) === 0 ? (
-              <p className="font-body-dense text-on-surface-variant">
-                No applications yet.
-              </p>
-            ) : (
-              <div className="space-y-sm">
-                <h3 className="font-label-caps text-on-surface-variant">
-                  Applications & payments
-                </h3>
-                {job.applications?.map((app) => (
-                  <div
-                    key={app._id}
-                    className="p-md rounded-md border border-outline-variant bg-surface-container-low space-y-sm"
-                  >
-                    <div className="flex flex-wrap items-center justify-between gap-sm">
-                      <div>
-                        <p className="font-semibold text-primary">
-                          Worker: {app.worker?.username || app.worker?._id || "—"}
-                        </p>
-                        <p className="font-body-dense text-on-surface-variant">
-                          {app.worker?.email || ""}
-                          {app.worker?.phone ? ` · ${app.worker.phone}` : ""}
-                        </p>
-                      </div>
-                      <StatusChip status={app.status} />
-                    </div>
-                    <dl className="grid grid-cols-2 sm:grid-cols-4 gap-sm font-body-dense">
-                      <div>
-                        <dt className="font-label-caps text-on-surface-variant">
-                          Proposed
-                        </dt>
-                        <dd>{money(app.proposedRate, job.currency)}</dd>
-                      </div>
-                      <div>
-                        <dt className="font-label-caps text-on-surface-variant">
-                          Agreed
-                        </dt>
-                        <dd>{money(app.agreedAmount, job.currency)}</dd>
-                      </div>
-                      <div>
-                        <dt className="font-label-caps text-on-surface-variant">
-                          Paid
-                        </dt>
-                        <dd>
-                          {app.order?.isCompleted
-                            ? money(app.order.price, job.currency)
-                            : "—"}
-                        </dd>
-                      </div>
-                      <div>
-                        <dt className="font-label-caps text-on-surface-variant">
-                          Worker earns
-                        </dt>
-                        <dd>{money(app.order?.sellerEarnings, job.currency)}</dd>
-                      </div>
-                    </dl>
-                    {app.workNote ? (
-                      <p className="font-body-dense italic">
-                        Work note: {app.workNote}
-                      </p>
-                    ) : null}
-                    {app.order ? (
-                      <p className="font-data-ref text-on-surface-variant">
-                        Order {String(app.order._id).slice(-8)} ·{" "}
-                        {app.order.status || "pending"} · ref{" "}
-                        {app.order.payment_intent?.slice(0, 12) || "—"}…
-                      </p>
-                    ) : null}
-                  </div>
-                ))}
-              </div>
-            )}
-          </article>
-        ))}
+      <div className="flex gap-md border-b border-outline-variant">
+        <button
+          type="button"
+          className={`pb-sm font-body-dense ${
+            tab === "jobs"
+              ? "font-semibold text-primary border-b-2 border-primary"
+              : "text-on-surface-variant"
+          }`}
+          onClick={() => setTab("jobs")}
+        >
+          Job posts ({jobs.length})
+        </button>
+        <button
+          type="button"
+          className={`pb-sm font-body-dense ${
+            tab === "requests"
+              ? "font-semibold text-primary border-b-2 border-primary"
+              : "text-on-surface-variant"
+          }`}
+          onClick={() => setTab("requests")}
+        >
+          Service requests ({requests.length})
+        </button>
       </div>
+
+      {tab === "jobs" ? (
+        jobs.length === 0 ? (
+          <EmptyState title="No job posts yet" />
+        ) : (
+          <div className="space-y-md">
+            {jobs.map((job) => (
+              <article
+                key={job._id}
+                className="p-md border border-outline-variant rounded-card bg-surface-container-lowest space-y-md"
+              >
+                <div className="flex flex-wrap items-start justify-between gap-sm">
+                  <div>
+                    <h2 className="font-section-title text-primary">{job.title}</h2>
+                    <p className="font-label-caps text-on-surface-variant mt-xs">
+                      {job.cat}
+                      {job.location?.city ? ` · ${job.location.city}` : ""}
+                    </p>
+                  </div>
+                  <StatusChip status={job.status} />
+                </div>
+                <p className="font-body-dense text-on-surface-variant">
+                  Employer: {job.employer?.username || "—"}
+                  {job.employer?.email ? ` · ${job.employer.email}` : ""}
+                </p>
+                {(job.applications?.length ?? 0) === 0 ? (
+                  <p className="font-body-dense text-on-surface-variant">
+                    No applications.
+                  </p>
+                ) : (
+                  job.applications?.map((app) => (
+                    <div
+                      key={app._id}
+                      className="p-md rounded-md border border-outline-variant bg-surface-container-low space-y-sm"
+                    >
+                      <div className="flex flex-wrap justify-between gap-sm">
+                        <p className="font-semibold text-primary">
+                          Worker: {app.worker?.username || "—"}
+                        </p>
+                        <StatusChip status={app.status} />
+                      </div>
+                      <p className="font-body-dense text-on-surface-variant">
+                        Proposed {money(app.proposedRate, job.currency)} · Agreed{" "}
+                        {money(app.agreedAmount, job.currency)} · Paid{" "}
+                        {app.order?.isCompleted
+                          ? money(app.order.price, job.currency)
+                          : "—"}
+                      </p>
+                    </div>
+                  ))
+                )}
+              </article>
+            ))}
+          </div>
+        )
+      ) : requests.length === 0 ? (
+        <EmptyState title="No service requests yet" />
+      ) : (
+        <div className="space-y-md">
+          {requests.map((r) => (
+            <article
+              key={r._id}
+              className="p-md border border-outline-variant rounded-card bg-surface-container-lowest space-y-sm"
+            >
+              <div className="flex flex-wrap justify-between gap-sm">
+                <h2 className="font-section-title text-primary">{r.title}</h2>
+                <StatusChip status={r.status} />
+              </div>
+              <p className="font-label-caps text-on-surface-variant">
+                {r.cat}
+                {r.location?.city ? ` · ${r.location.city}` : ""}
+              </p>
+              <p className="font-body-dense">
+                Customer: {r.customer?.username || "—"}
+                {r.customer?.email ? ` · ${r.customer.email}` : ""}
+              </p>
+              <p className="font-body-dense">
+                Worker: {r.worker?.username || "—"}
+                {r.worker?.email ? ` · ${r.worker.email}` : ""}
+              </p>
+              <p className="font-data-price text-primary">
+                Budget {money(r.budget, r.currency)} · Agreed{" "}
+                {money(r.agreedAmount, r.currency)} · Paid{" "}
+                {r.order?.isCompleted ? money(r.order.price, r.currency) : "—"}
+              </p>
+              {r.workNote ? (
+                <p className="font-body-dense italic">Work: {r.workNote}</p>
+              ) : null}
+            </article>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

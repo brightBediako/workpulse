@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useParams } from "next/navigation";
 import { MarketplaceNav } from "@/components/layout/MarketplaceNav";
 import { Button } from "@/components/ui/Button";
+import { Input } from "@/components/ui/Input";
 import { StatusChip } from "@/components/ui/StatusChip";
 import { api, ApiError } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
@@ -28,6 +29,8 @@ export default function ServiceRequestDetailPage() {
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
   const [busy, setBusy] = useState(false);
+  const [workNote, setWorkNote] = useState("");
+  const [approveAmount, setApproveAmount] = useState("");
 
   async function load() {
     if (!id) return;
@@ -35,6 +38,8 @@ export default function ServiceRequestDetailPage() {
       auth: false,
     });
     setRequest(doc);
+    if (doc.budget != null) setApproveAmount(String(doc.budget));
+    else if (doc.agreedAmount != null) setApproveAmount(String(doc.agreedAmount));
   }
 
   useEffect(() => {
@@ -96,15 +101,58 @@ export default function ServiceRequestDetailPage() {
     );
   }
 
+  function submitWork() {
+    run(
+      () =>
+        api(`/api/service-requests/${id}/submit-work`, {
+          method: "PUT",
+          body: workNote.trim() ? { note: workNote.trim() } : {},
+        }).then(() => undefined),
+      "Work submitted"
+    );
+  }
+
+  function approveWork() {
+    const body: Record<string, unknown> = {};
+    if (approveAmount.trim()) body.amount = Number(approveAmount);
+    run(
+      () =>
+        api(`/api/service-requests/${id}/approve-work`, {
+          method: "PUT",
+          body,
+        }).then(() => undefined),
+      "Work approved"
+    );
+  }
+
+  async function pay() {
+    setBusy(true);
+    setError("");
+    try {
+      const res = await api<{ authorization_url?: string }>(
+        `/api/service-requests/${id}/payment-intent`,
+        { method: "POST", body: {} }
+      );
+      if (res.authorization_url) {
+        window.location.href = res.authorization_url;
+        return;
+      }
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Payment failed");
+    } finally {
+      setBusy(false);
+    }
+  }
+
   function complete() {
-    if (!window.confirm("Mark this service request as completed?")) return;
+    if (!window.confirm("Close this request as completed?")) return;
     run(
       () =>
         api(`/api/service-requests/${id}/complete`, {
           method: "PUT",
           body: {},
         }).then(() => undefined),
-      "Request marked completed"
+      "Request completed"
     );
   }
 
@@ -129,13 +177,16 @@ export default function ServiceRequestDetailPage() {
     request?.status === "open" &&
     isDirectedToMe &&
     Boolean(request.sellerId);
-  const canComplete =
-    request?.status === "accepted" && (isOwner || isAcceptedWorker);
+  const canSubmitWork = isAcceptedWorker && request?.status === "accepted";
+  const canApproveWork = isOwner && request?.status === "work_submitted";
+  const canPay = isOwner && request?.status === "work_approved";
+  const canComplete = request?.status === "paid";
   const canCancel =
     isOwner &&
     request &&
-    request.status !== "completed" &&
-    request.status !== "cancelled";
+    !["completed", "cancelled", "paid", "work_approved"].includes(
+      request.status
+    );
 
   return (
     <div className="min-h-screen bg-background">
@@ -185,6 +236,17 @@ export default function ServiceRequestDetailPage() {
                   </dd>
                 </div>
               ) : null}
+              {request.agreedAmount != null ? (
+                <div>
+                  <dt className="font-label-caps text-on-surface-variant">
+                    Agreed
+                  </dt>
+                  <dd className="font-data-price text-primary">
+                    {request.currency || "GHS"}{" "}
+                    {Number(request.agreedAmount).toLocaleString()}
+                  </dd>
+                </div>
+              ) : null}
               {request.preferredDate ? (
                 <div>
                   <dt className="font-label-caps text-on-surface-variant">
@@ -193,27 +255,11 @@ export default function ServiceRequestDetailPage() {
                   <dd>{formatDate(request.preferredDate)}</dd>
                 </div>
               ) : null}
-              {request.createdAt ? (
-                <div>
-                  <dt className="font-label-caps text-on-surface-variant">
-                    Posted
-                  </dt>
-                  <dd>{formatDate(request.createdAt)}</dd>
-                </div>
-              ) : null}
-              {request.acceptedAt ? (
-                <div>
-                  <dt className="font-label-caps text-on-surface-variant">
-                    Accepted
-                  </dt>
-                  <dd>{formatDate(request.acceptedAt)}</dd>
-                </div>
-              ) : null}
             </dl>
 
-            {request.responseNote ? (
-              <p className="font-body-dense text-on-surface italic border-l-2 border-primary-container pl-md">
-                Worker note: {request.responseNote}
+            {request.workNote ? (
+              <p className="font-body-dense italic border-l-2 border-primary-container pl-md">
+                Work note: {request.workNote}
               </p>
             ) : null}
 
@@ -235,10 +281,51 @@ export default function ServiceRequestDetailPage() {
                   Decline
                 </Button>
               ) : null}
+              {canSubmitWork ? (
+                <div className="w-full space-y-sm">
+                  <textarea
+                    className="w-full min-h-20 border border-outline-variant rounded-md px-md py-md"
+                    value={workNote}
+                    onChange={(e) => setWorkNote(e.target.value)}
+                    placeholder="Completion note (optional)"
+                  />
+                  <Button
+                    variant="conversion"
+                    loading={busy}
+                    onClick={submitWork}
+                  >
+                    Mark work done
+                  </Button>
+                </div>
+              ) : null}
+              {canApproveWork ? (
+                <div className="w-full space-y-sm max-w-xs">
+                  <Input
+                    label="Payment amount (GHS)"
+                    type="number"
+                    min={0}
+                    value={approveAmount}
+                    onChange={(e) => setApproveAmount(e.target.value)}
+                  />
+                  <Button loading={busy} onClick={approveWork}>
+                    Approve work
+                  </Button>
+                </div>
+              ) : null}
+              {canPay ? (
+                <Button variant="conversion" loading={busy} onClick={pay}>
+                  Pay worker (Paystack)
+                </Button>
+              ) : null}
               {canComplete ? (
                 <Button loading={busy} onClick={complete}>
-                  Mark completed
+                  Close request
                 </Button>
+              ) : null}
+              {request.status === "paid" && isAcceptedWorker ? (
+                <Link href="/account">
+                  <Button variant="outline">Request payout</Button>
+                </Link>
               ) : null}
               {canCancel ? (
                 <Button
@@ -250,19 +337,9 @@ export default function ServiceRequestDetailPage() {
                   Cancel request
                 </Button>
               ) : null}
-              {isOwner && request.status === "open" ? (
-                <Link href="/service-requests">
-                  <Button variant="outline">Manage in My requests</Button>
-                </Link>
-              ) : null}
               {!user ? (
                 <Link href={`/login?next=/service-requests/${id}`}>
                   <Button>Log in to respond</Button>
-                </Link>
-              ) : null}
-              {request.gigId ? (
-                <Link href={`/gigs/${request.gigId}`}>
-                  <Button variant="ghost">Related gig</Button>
                 </Link>
               ) : null}
             </div>

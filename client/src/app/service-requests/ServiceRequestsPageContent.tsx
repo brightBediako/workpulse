@@ -72,9 +72,16 @@ function RequestCard({
   busyId,
   onAccept,
   onReject,
+  onSubmitWork,
+  onApproveWork,
+  onPay,
   onComplete,
   onCancel,
   onEdit,
+  approveAmount,
+  onApproveAmountChange,
+  workNote,
+  onWorkNoteChange,
   showDirectedLabel,
 }: {
   request: ServiceRequest;
@@ -83,9 +90,16 @@ function RequestCard({
   busyId: string | null;
   onAccept: (id: string) => void;
   onReject: (id: string) => void;
+  onSubmitWork: (id: string) => void;
+  onApproveWork: (id: string) => void;
+  onPay: (id: string) => void;
   onComplete: (id: string) => void;
   onCancel: (id: string) => void;
   onEdit: (r: ServiceRequest) => void;
+  approveAmount: string;
+  onApproveAmountChange: (v: string) => void;
+  workNote: string;
+  onWorkNoteChange: (v: string) => void;
   showDirectedLabel?: boolean;
 }) {
   const busy = busyId === r._id;
@@ -101,11 +115,14 @@ function RequestCard({
     (!r.sellerId || isDirectedToMe);
   const canReject =
     isWorker && r.status === "open" && isDirectedToMe && Boolean(r.sellerId);
-  const canComplete =
-    r.status === "accepted" && (isOwner || isAcceptedWorker);
+  const canSubmitWork = isAcceptedWorker && r.status === "accepted";
+  const canApproveWork = isOwner && r.status === "work_submitted";
+  const canPay = isOwner && r.status === "work_approved";
+  const canComplete = r.status === "paid" && (isOwner || isAcceptedWorker);
   const canEdit = isOwner && r.status === "open";
   const canCancel =
-    isOwner && r.status !== "completed" && r.status !== "cancelled";
+    isOwner &&
+    !["completed", "cancelled", "paid", "work_approved"].includes(r.status);
 
   return (
     <article className="p-md border border-outline-variant rounded-card bg-surface-container-lowest">
@@ -153,6 +170,17 @@ function RequestCard({
           Note: {r.responseNote}
         </p>
       ) : null}
+      {r.workNote ? (
+        <p className="font-body-dense text-on-surface mt-sm italic">
+          Work: {r.workNote}
+        </p>
+      ) : null}
+      {r.agreedAmount != null ? (
+        <p className="font-data-price text-primary mt-sm">
+          Agreed: {r.currency || "GHS"}{" "}
+          {Number(r.agreedAmount).toLocaleString()}
+        </p>
+      ) : null}
 
       <div className="flex flex-wrap gap-sm mt-md">
         {canAccept ? (
@@ -174,6 +202,72 @@ function RequestCard({
           >
             Decline
           </Button>
+        ) : null}
+        {canSubmitWork ? (
+          <div className="w-full space-y-sm">
+            <textarea
+              className="w-full min-h-20 bg-surface-container-low border border-outline-variant rounded-md px-md py-md font-sans text-[15px]"
+              value={workNote}
+              onChange={(e) => onWorkNoteChange(e.target.value)}
+              placeholder="Describe completed work (optional)…"
+            />
+            <Button
+              variant="conversion"
+              className="!py-sm !px-md text-sm"
+              loading={busy}
+              onClick={() => onSubmitWork(r._id)}
+            >
+              Mark work done
+            </Button>
+          </div>
+        ) : null}
+        {canApproveWork ? (
+          <div className="w-full space-y-sm max-w-xs">
+            <Input
+              label="Payment amount (GHS)"
+              type="number"
+              min={0}
+              value={
+                approveAmount ||
+                (r.budget != null ? String(r.budget) : "")
+              }
+              onChange={(e) => onApproveAmountChange(e.target.value)}
+            />
+            <Button
+              className="!py-sm !px-md text-sm"
+              loading={busy}
+              onClick={() => onApproveWork(r._id)}
+            >
+              Approve work
+            </Button>
+          </div>
+        ) : null}
+        {canPay ? (
+          <Button
+            variant="conversion"
+            className="!py-sm !px-md text-sm"
+            loading={busy}
+            onClick={() => onPay(r._id)}
+          >
+            Pay worker (Paystack)
+          </Button>
+        ) : null}
+        {r.status === "work_submitted" && isAcceptedWorker ? (
+          <p className="font-body-dense text-on-surface-variant">
+            Waiting for customer approval.
+          </p>
+        ) : null}
+        {r.status === "work_approved" && isAcceptedWorker ? (
+          <p className="font-body-dense text-on-surface-variant">
+            Waiting for customer payment.
+          </p>
+        ) : null}
+        {r.status === "paid" && isAcceptedWorker ? (
+          <Link href="/account">
+            <Button variant="outline" className="!py-sm !px-md text-sm">
+              Request payout
+            </Button>
+          </Link>
         ) : null}
         {canComplete ? (
           <Button
@@ -235,6 +329,10 @@ export default function ServiceRequestsPageContent() {
   const [busyId, setBusyId] = useState<string | null>(null);
   const [form, setForm] = useState<RequestForm>(emptyForm());
   const [filterCat, setFilterCat] = useState("");
+  const [workNote, setWorkNote] = useState("");
+  const [approveAmounts, setApproveAmounts] = useState<Record<string, string>>(
+    {}
+  );
 
   const isWorker = Boolean(user?.isSeller || user?.accountModes?.worker);
 
@@ -469,7 +567,7 @@ export default function ServiceRequestsPageContent() {
   }
 
   function handleComplete(id: string) {
-    if (!window.confirm("Mark this service request as completed?")) return;
+    if (!window.confirm("Close this request as completed?")) return;
     runAction(
       id,
       () =>
@@ -477,8 +575,57 @@ export default function ServiceRequestsPageContent() {
           method: "PUT",
           body: {},
         }).then(() => undefined),
-      "Request marked completed"
+      "Request completed"
     );
+  }
+
+  function handleSubmitWork(id: string) {
+    runAction(
+      id,
+      () =>
+        api(`/api/service-requests/${id}/submit-work`, {
+          method: "PUT",
+          body: workNote.trim() ? { note: workNote.trim() } : {},
+        }).then(() => undefined),
+      "Work submitted for approval"
+    );
+    setWorkNote("");
+  }
+
+  function handleApproveWork(id: string) {
+    const amountRaw = approveAmounts[id] ?? "";
+    const body: Record<string, unknown> = {};
+    if (amountRaw.trim()) body.amount = Number(amountRaw);
+    runAction(
+      id,
+      () =>
+        api(`/api/service-requests/${id}/approve-work`, {
+          method: "PUT",
+          body,
+        }).then(() => undefined),
+      "Work approved — proceed to payment"
+    );
+  }
+
+  async function handlePay(id: string) {
+    setBusyId(id);
+    setError("");
+    setMessage("");
+    try {
+      const res = await api<{ authorization_url?: string }>(
+        `/api/service-requests/${id}/payment-intent`,
+        { method: "POST", body: {} }
+      );
+      if (res.authorization_url) {
+        window.location.href = res.authorization_url;
+        return;
+      }
+      setMessage("Payment started.");
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Could not start payment");
+    } finally {
+      setBusyId(null);
+    }
   }
 
   function handleCancel(id: string) {
@@ -505,10 +652,23 @@ export default function ServiceRequestsPageContent() {
     busyId,
     onAccept: handleAccept,
     onReject: handleReject,
+    onSubmitWork: handleSubmitWork,
+    onApproveWork: handleApproveWork,
+    onPay: handlePay,
     onComplete: handleComplete,
     onCancel: handleCancel,
     onEdit: openEdit,
+    workNote,
+    onWorkNoteChange: setWorkNote,
   };
+
+  function cardExtra(r: ServiceRequest) {
+    return {
+      approveAmount: approveAmounts[r._id] ?? "",
+      onApproveAmountChange: (v: string) =>
+        setApproveAmounts((prev) => ({ ...prev, [r._id]: v })),
+    };
+  }
 
   if (authLoading) {
     return (
@@ -776,6 +936,7 @@ export default function ServiceRequestsPageContent() {
                   request={r}
                   showDirectedLabel
                   {...cardProps}
+                  {...cardExtra(r)}
                 />
               ))}
             </div>
@@ -800,6 +961,7 @@ export default function ServiceRequestsPageContent() {
                         request={r}
                         showDirectedLabel
                         {...cardProps}
+                        {...cardExtra(r)}
                       />
                     ))}
                   </div>
@@ -812,7 +974,7 @@ export default function ServiceRequestsPageContent() {
                   </h2>
                   <div className="grid gap-md">
                     {inboxBoard.map((r) => (
-                      <RequestCard key={r._id} request={r} {...cardProps} />
+                      <RequestCard key={r._id} request={r} {...cardProps} {...cardExtra(r)} />
                     ))}
                   </div>
                 </section>
@@ -836,7 +998,7 @@ export default function ServiceRequestsPageContent() {
         ) : (
           <div className="grid gap-md">
             {openBoard.map((r) => (
-              <RequestCard key={r._id} request={r} {...cardProps} />
+              <RequestCard key={r._id} request={r} {...cardProps} {...cardExtra(r)} />
             ))}
           </div>
         )}

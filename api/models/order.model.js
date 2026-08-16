@@ -61,9 +61,26 @@ const OrderSchema = new Schema(
     },
     status: {
       type: String,
-      enum: ["pending", "in_progress", "completed", "cancelled", "disputed"],
+      enum: [
+        "pending",
+        "work_submitted",
+        "work_approved",
+        "in_progress",
+        "completed",
+        "cancelled",
+        "disputed",
+      ],
       default: "pending",
     },
+    workSubmittedAt: { type: Date, required: false },
+    workNote: {
+      type: String,
+      required: false,
+      trim: true,
+      maxlength: 2000,
+    },
+    workApprovedAt: { type: Date, required: false },
+    agreedAmount: { type: Number, required: false, min: 0 },
     disputeReason: {
       type: String,
       required: false,

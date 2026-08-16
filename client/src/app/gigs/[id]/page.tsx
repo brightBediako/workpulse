@@ -43,25 +43,18 @@ export default function GigDetailPage() {
     setOrdering(true);
     setOrderMsg("");
     try {
-      const res = await api<{
-        authorization_url?: string;
-        reference?: string;
-        payment_intent?: string;
-        orderId?: string;
-      }>(`/api/orders/create-payment-intent/${id}`, { method: "POST" });
-
-      if (res.authorization_url) {
-        window.location.href = res.authorization_url;
-        return;
-      }
-
+      const res = await api<{ message?: string; orderId?: string }>(
+        `/api/orders/book/${id}`,
+        { method: "POST" }
+      );
       setOrderMsg(
-        `Payment started (${res.reference || res.payment_intent}). Complete checkout, then confirm from Orders.`
+        res.message ||
+          "Service booked. The worker will complete the job before you pay."
       );
       router.push("/orders");
     } catch (err) {
       setOrderMsg(
-        err instanceof ApiError ? err.message : "Could not start order"
+        err instanceof ApiError ? err.message : "Could not book service"
       );
     } finally {
       setOrdering(false);
@@ -125,8 +118,11 @@ export default function GigDetailPage() {
                   onClick={orderNow}
                   loading={ordering}
                 >
-                  Order / Pay
+                  Book service
                 </Button>
+                <p className="font-body-dense text-on-surface-variant text-center">
+                  Pay after the worker completes the job and you approve the work.
+                </p>
                 {user && String(gig.userId) !== String(user._id) ? (
                   <Link
                     href={`/service-requests?create=1&gigId=${id}&sellerId=${gig.userId}`}

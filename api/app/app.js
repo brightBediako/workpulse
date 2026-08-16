@@ -1,4 +1,5 @@
 import express from "express";
+import { getSmtpStatus } from "../services/emailService.js";
 import dotenv from "dotenv";
 import path from "path";
 import { fileURLToPath } from "url";
@@ -132,7 +133,17 @@ app.get("/", (req, res) => {
 });
 
 app.get("/healthz", (req, res) => {
-  res.status(200).json({ status: "ok" });
+  const mail = getSmtpStatus();
+  res.status(200).json({
+    status: "ok",
+    email: {
+      mode: mail.mode,
+      configured: mail.configured,
+      ...(mail.configured
+        ? { host: mail.host, port: mail.port, from: mail.from }
+        : {}),
+    },
+  });
 });
 
 // custom routes

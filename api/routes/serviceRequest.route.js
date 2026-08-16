@@ -9,6 +9,9 @@ import {
   cancelServiceRequest,
   acceptServiceRequest,
   rejectServiceRequest,
+  submitServiceRequestWork,
+  approveServiceRequestWork,
+  createServiceRequestPaymentIntent,
   completeServiceRequest,
 } from "../controllers/serviceRequest.controller.js";
 import { verifyToken } from "../middlewares/jwt.js";
@@ -23,6 +26,9 @@ router.get("/", getServiceRequests);
 
 router.put("/:id/accept", verifyToken, acceptServiceRequest);
 router.put("/:id/reject", verifyToken, rejectServiceRequest);
+router.put("/:id/submit-work", verifyToken, submitServiceRequestWork);
+router.put("/:id/approve-work", verifyToken, approveServiceRequestWork);
+router.post("/:id/payment-intent", verifyToken, createServiceRequestPaymentIntent);
 router.put("/:id/complete", verifyToken, completeServiceRequest);
 
 router.get("/:id", getServiceRequest);

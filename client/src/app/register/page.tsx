@@ -9,6 +9,8 @@ import { ApiError } from "@/lib/api";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 
+type AccountType = "customer" | "worker" | "employer";
+
 export default function RegisterPage() {
   const { register, login } = useAuth();
   const router = useRouter();
@@ -19,8 +21,7 @@ export default function RegisterPage() {
     country: "Ghana",
     address: "",
     phone: "",
-    isSeller: false,
-    isEmployer: false,
+    accountType: "customer" as AccountType,
   });
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
@@ -34,15 +35,31 @@ export default function RegisterPage() {
     setError("");
     setLoading(true);
     try {
+      const { accountType, ...rest } = form;
       await register({
-        ...form,
+        ...rest,
         phone: form.phone.trim(),
+        isSeller: accountType === "worker",
+        isEmployer: accountType === "employer",
       });
+    } catch (err) {
+      setError(
+        err instanceof ApiError ? err.message : "Registration failed."
+      );
+      return;
+    } finally {
+      setLoading(false);
+    }
+
+    setLoading(true);
+    try {
       await login(form.email || form.username, form.password);
       router.push("/discover");
     } catch (err) {
       setError(
-        err instanceof ApiError ? err.message : "Registration failed."
+        err instanceof ApiError
+          ? `Account created, but sign-in failed: ${err.message}. Try logging in.`
+          : "Account created, but sign-in failed. Please log in manually."
       );
     } finally {
       setLoading(false);
@@ -110,26 +127,44 @@ export default function RegisterPage() {
               onChange={(e) => set("country", e.target.value)}
               required
             />
-            <div className="flex flex-col gap-sm pt-sm">
-              <label className="flex items-center gap-sm font-body-dense">
+            <fieldset className="flex flex-col gap-sm pt-sm border-0 p-0 m-0">
+              <legend className="font-body-dense font-semibold text-on-surface mb-xs">
+                Account type
+              </legend>
+              <label className="flex items-center gap-sm font-body-dense cursor-pointer">
                 <input
-                  type="checkbox"
-                  checked={form.isSeller}
-                  onChange={(e) => set("isSeller", e.target.checked)}
-                  className="rounded border-outline-variant"
+                  type="radio"
+                  name="accountType"
+                  value="customer"
+                  checked={form.accountType === "customer"}
+                  onChange={() => set("accountType", "customer")}
+                  className="border-outline-variant"
                 />
-                I want to offer services (worker)
+                Customer — browse and hire workers
               </label>
-              <label className="flex items-center gap-sm font-body-dense">
+              <label className="flex items-center gap-sm font-body-dense cursor-pointer">
                 <input
-                  type="checkbox"
-                  checked={form.isEmployer}
-                  onChange={(e) => set("isEmployer", e.target.checked)}
-                  className="rounded border-outline-variant"
+                  type="radio"
+                  name="accountType"
+                  value="worker"
+                  checked={form.accountType === "worker"}
+                  onChange={() => set("accountType", "worker")}
+                  className="border-outline-variant"
                 />
-                I want to post jobs (employer)
+                Worker — offer services and take gigs
               </label>
-            </div>
+              <label className="flex items-center gap-sm font-body-dense cursor-pointer">
+                <input
+                  type="radio"
+                  name="accountType"
+                  value="employer"
+                  checked={form.accountType === "employer"}
+                  onChange={() => set("accountType", "employer")}
+                  className="border-outline-variant"
+                />
+                Employer — post jobs and hire talent
+              </label>
+            </fieldset>
             {error ? (
               <p className="font-body-dense text-error">{error}</p>
             ) : null}

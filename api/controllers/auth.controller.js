@@ -48,6 +48,17 @@ export const register = async (req, res, next) => {
       }
     }
 
+    const isSeller = Boolean(req.body.isSeller);
+    const isEmployer = Boolean(req.body.isEmployer);
+    if (isSeller && isEmployer) {
+      return next(
+        createError(
+          400,
+          "Choose either worker or employer — not both at registration."
+        )
+      );
+    }
+
     // Hash password and create new user (never accept admin/verify fields from client)
     const hash = bcrypt.hashSync(req.body.password, bcryptSaltRounds());
     const {
@@ -68,8 +79,8 @@ export const register = async (req, res, next) => {
       phone: req.body.phone,
       address,
       password: hash,
-      isSeller: Boolean(req.body.isSeller),
-      isEmployer: Boolean(req.body.isEmployer),
+      isSeller,
+      isEmployer,
       companyName:
         typeof req.body.companyName === "string"
           ? req.body.companyName.trim().slice(0, 120) || undefined
@@ -91,9 +102,13 @@ export const register = async (req, res, next) => {
       link: "/",
     });
 
-    // Send registration email if email exists
-    if (newUser && newUser.email) {
-      await sendRegisterNotificationEmail(newUser.email, newUser.username);
+    // Welcome email must not block registration (SMTP can hang or fail after save)
+    if (newUser?.email) {
+      sendRegisterNotificationEmail(newUser.email, newUser.username).catch(
+        (err) => {
+          console.error("register welcome email failed:", err?.message || err);
+        }
+      );
     }
 
     // Return user data without password

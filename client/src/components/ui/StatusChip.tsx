@@ -15,7 +15,6 @@ const toneMap: Record<string, string> = {
   accepted: "bg-primary-fixed/50 text-on-primary-fixed-variant",
   work_submitted: "bg-secondary-fixed/40 text-on-secondary-fixed-variant",
   work_approved: "bg-tertiary-fixed/60 text-on-tertiary-fixed-variant",
-  paid: "bg-primary-fixed/50 text-on-primary-fixed-variant",
   default: "bg-surface-container-high text-on-surface-variant",
 };
 

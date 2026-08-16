@@ -72,7 +72,14 @@ Copy `api/.env.example` → `api/.env` (never commit secrets).
 | `CLIENT_URL` | Yes | **Vercel client URL** (emails + Paystack callback `/orders/callback`) |
 | `BCRYPT_SALT_ROUNDS` | No | Default `12` |
 | `SOCKET_PATH` | No | Default `/socket.io` |
-| Email `EMAIL_*` | Optional | Welcome mail |
+| `MAIL_SMTP_HOST` | Optional | e.g. `smtp.hostinger.com` |
+| `MAIL_SMTP_PORT` | Optional | `465` (SSL) or `587` (TLS) |
+| `MAIL_SMTP_USER` | Optional | SMTP login (usually same as mailbox) |
+| `MAIL_SMTP_PASS` | Optional | Quote if password has `\`, `"`, or `#` |
+| `MAIL_SMTP_ENCRYPTION` | Optional | Set `ssl` for port 465 |
+| `MAIL_FROM` / `MAIL_FROM_NAME` | Optional | From header; welcome + reset emails |
+| `MAIL_TO` | Optional | Default reply-to address |
+| `EMAIL_SMTP_VERIFY` | No | Set `true` to verify SMTP before each send |
 
 ### VPS sketch
 

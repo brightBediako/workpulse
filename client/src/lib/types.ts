@@ -77,10 +77,13 @@ export type Order = {
   status: string;
   isCompleted: boolean;
   img?: string;
-  gigId: string;
+  gigId?: string;
   sellerId: string;
   buyerId: string;
   payment_intent?: string;
+  sourceType?: string;
+  agreedAmount?: number;
+  workNote?: string;
 };
 
 export type Notification = {
@@ -134,6 +137,11 @@ export type ServiceRequest = {
   acceptedAt?: string;
   rejectedAt?: string;
   responseNote?: string;
+  workNote?: string;
+  agreedAmount?: number;
+  orderId?: string;
+  workSubmittedAt?: string;
+  workApprovedAt?: string;
   location?: { city?: string; region?: string; country?: string; area?: string };
   createdAt?: string;
   updatedAt?: string;

@@ -39,6 +39,7 @@ import {
   generateReport,
   getSystemLogs,
   getAdminJobs,
+  getAdminServiceRequests,
 } from "../controllers/admin.controller.js";
 import {
   listAdminPayouts,
@@ -69,6 +70,7 @@ router.delete("/users/:id", deleteUser);
 // Service Management Routes
 router.get("/gigs", getAllGigs);
 router.get("/jobs", getAdminJobs);
+router.get("/service-requests", getAdminServiceRequests);
 router.get("/gigs/:id", getGigById);
 router.put("/gigs/:id/approve", approveGig);
 router.put("/gigs/:id/reject", rejectGig);

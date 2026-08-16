@@ -69,7 +69,16 @@ const ServiceRequestSchema = new Schema(
     },
     status: {
       type: String,
-      enum: ["open", "accepted", "rejected", "cancelled", "completed"],
+      enum: [
+        "open",
+        "accepted",
+        "rejected",
+        "cancelled",
+        "work_submitted",
+        "work_approved",
+        "paid",
+        "completed",
+      ],
       default: "open",
       index: true,
     },
@@ -92,6 +101,16 @@ const ServiceRequestSchema = new Schema(
       trim: true,
       maxlength: 500,
     },
+    workSubmittedAt: { type: Date, required: false },
+    workNote: {
+      type: String,
+      required: false,
+      trim: true,
+      maxlength: 2000,
+    },
+    workApprovedAt: { type: Date, required: false },
+    agreedAmount: { type: Number, required: false, min: 0 },
+    orderId: { type: String, required: false, index: true },
   },
   { timestamps: true }
 );

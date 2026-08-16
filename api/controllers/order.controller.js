@@ -13,6 +13,7 @@ import {
   verifyTransaction,
   verifyWebhookSignature,
 } from "../services/paystackService.js";
+import { createNotification } from "../services/notificationService.js";
 
 const isOrderParty = (order, userId) =>
   String(order.buyerId) === String(userId) ||
@@ -27,10 +28,16 @@ export const getOrders = async (req, res, next) => {
       ? { sellerId: req.userId }
       : { buyerId: req.userId };
 
-    // Paid engagements (isCompleted) plus any still-pending payment for the role
     const orders = await Order.find({
       ...filter,
-      $or: [{ isCompleted: true }, { status: "pending" }],
+      $or: [
+        { isCompleted: true },
+        {
+          status: {
+            $in: ["pending", "work_submitted", "work_approved", "in_progress"],
+          },
+        },
+      ],
     }).sort({ createdAt: -1 });
 
     res.status(200).send(orders);
@@ -53,8 +60,228 @@ export const getOrder = async (req, res, next) => {
 };
 
 /**
- * Initialize Paystack checkout for an approved gig.
- * Stores Paystack reference in order.payment_intent (legacy field name).
+ * Book a gig — pay after work is submitted and approved (no Paystack yet).
+ */
+export const bookGig = async (req, res, next) => {
+  try {
+    const gig = await Gig.findById(req.params.id);
+    if (!gig) return next(createError(404, "Gig not found!"));
+    if (gig.status !== "approved") {
+      return next(createError(400, "You can only book approved service listings!"));
+    }
+    if (String(gig.userId) === String(req.userId)) {
+      return next(createError(403, "You cannot book your own gig!"));
+    }
+
+    const openBooking = await Order.findOne({
+      gigId: String(gig._id),
+      buyerId: String(req.userId),
+      isCompleted: false,
+      status: { $in: ["pending", "work_submitted", "work_approved"] },
+    });
+    if (openBooking) {
+      return res.status(200).json({
+        message: "You already have an open booking for this gig.",
+        orderId: openBooking._id,
+        order: openBooking,
+      });
+    }
+
+    const reference = `book_${createPaymentReference()}`;
+    const newOrder = await Order.create({
+      sourceType: "gig",
+      gigId: String(gig._id),
+      img: gig.cover,
+      title: gig.title,
+      price: gig.price,
+      agreedAmount: gig.price,
+      sellerId: String(gig.userId),
+      buyerId: String(req.userId),
+      payment_intent: reference,
+      status: "pending",
+      isCompleted: false,
+      disputeStatus: "none",
+    });
+
+    await createNotification({
+      userId: gig.userId,
+      type: "order_booked",
+      message: `New booking for "${gig.title}". Complete the work, then the customer pays.`,
+      link: "/orders",
+    });
+
+    res.status(201).json({
+      message: "Service booked. Worker completes work before payment.",
+      orderId: newOrder._id,
+      order: newOrder,
+    });
+  } catch (err) {
+    next(err);
+  }
+};
+
+/** PUT /api/orders/:id/submit-work — seller marks gig work done */
+export const submitOrderWork = async (req, res, next) => {
+  try {
+    const order = await Order.findById(req.params.id);
+    if (!order) return next(createError(404, "Order not found!"));
+
+    if (String(order.sellerId) !== String(req.userId)) {
+      return next(createError(403, "Only the seller can submit completed work."));
+    }
+    if (order.isCompleted) {
+      return next(createError(400, "Paid orders cannot re-enter the work submission flow."));
+    }
+    if (order.status !== "pending") {
+      return next(
+        createError(400, `Cannot submit work when order status is "${order.status}".`)
+      );
+    }
+
+    order.status = "work_submitted";
+    order.workSubmittedAt = new Date();
+    if (typeof req.body.note === "string") {
+      order.workNote = req.body.note.trim().slice(0, 2000) || undefined;
+    }
+    await order.save();
+
+    await createNotification({
+      userId: order.buyerId,
+      type: "order_work_submitted",
+      message: `Work submitted for "${order.title}". Review and pay when satisfied.`,
+      link: "/orders",
+    });
+
+    res.status(200).json({
+      message: "Work submitted for buyer approval.",
+      order,
+    });
+  } catch (err) {
+    next(err);
+  }
+};
+
+/** PUT /api/orders/:id/approve-work — buyer approves completed gig work */
+export const approveOrderWork = async (req, res, next) => {
+  try {
+    const order = await Order.findById(req.params.id);
+    if (!order) return next(createError(404, "Order not found!"));
+
+    if (String(order.buyerId) !== String(req.userId)) {
+      return next(createError(403, "Only the buyer can approve completed work."));
+    }
+    if (order.status !== "work_submitted") {
+      return next(createError(400, "Only submitted work can be approved."));
+    }
+
+    if (req.body.amount !== undefined && req.body.amount !== null && req.body.amount !== "") {
+      const amount = Number(req.body.amount);
+      if (!Number.isFinite(amount) || amount <= 0) {
+        return next(createError(400, "amount must be a positive number."));
+      }
+      order.price = amount;
+      order.agreedAmount = amount;
+    } else if (order.agreedAmount != null) {
+      order.price = order.agreedAmount;
+    }
+
+    order.status = "work_approved";
+    order.workApprovedAt = new Date();
+    await order.save();
+
+    await createNotification({
+      userId: order.sellerId,
+      type: "order_work_approved",
+      message: `Your work for "${order.title}" was approved. Awaiting customer payment.`,
+      link: "/orders",
+    });
+
+    res.status(200).json({
+      message: "Work approved. Proceed to payment.",
+      order,
+    });
+  } catch (err) {
+    next(err);
+  }
+};
+
+/** POST /api/orders/:id/payment-intent — buyer pays after work approved */
+export const payOrder = async (req, res, next) => {
+  try {
+    if (!isPaystackConfigured()) {
+      return next(
+        createError(500, "Paystack is not configured. Set PAYSTACK_SECRET_KEY.")
+      );
+    }
+
+    const order = await Order.findById(req.params.id);
+    if (!order) return next(createError(404, "Order not found!"));
+
+    if (String(order.buyerId) !== String(req.userId)) {
+      return next(createError(403, "Only the buyer can pay for this order."));
+    }
+    if (order.isCompleted) {
+      return next(createError(400, "Order is already paid."));
+    }
+    if (order.status !== "work_approved") {
+      return next(createError(400, "Work must be approved before payment."));
+    }
+
+    const buyer = await User.findById(req.userId).select("email");
+    if (!buyer?.email) {
+      return next(
+        createError(400, "Your account needs a valid email to pay with Paystack.")
+      );
+    }
+
+    const reference = createPaymentReference();
+    const callbackUrl = `${clientBaseUrl()}/orders/callback`;
+
+    const payment = await initializeTransaction({
+      email: buyer.email,
+      amountMajor: order.price,
+      reference,
+      callbackUrl,
+      metadata: {
+        orderId: String(order._id),
+        gigId: order.gigId ? String(order.gigId) : undefined,
+        serviceRequestId: order.serviceRequestId
+          ? String(order.serviceRequestId)
+          : undefined,
+        buyerId: String(order.buyerId),
+        sellerId: String(order.sellerId),
+        custom_fields: [
+          {
+            display_name: "Order",
+            variable_name: "order_title",
+            value: order.title,
+          },
+        ],
+      },
+    });
+
+    order.payment_intent = payment.reference;
+    await order.save();
+
+    res.status(200).json({
+      authorization_url: payment.authorization_url,
+      access_code: payment.access_code,
+      reference: payment.reference,
+      payment_intent: payment.reference,
+      orderId: order._id,
+      amount: order.price,
+    });
+  } catch (err) {
+    if (err.statusCode) {
+      return next(createError(err.statusCode, err.message));
+    }
+    next(err);
+  }
+};
+
+/**
+ * Initialize Paystack checkout for an approved gig (legacy instant-pay path).
+ * Prefer book → submit-work → approve-work → POST /orders/:id/payment-intent.
  */
 export const intent = async (req, res, next) => {
   try {

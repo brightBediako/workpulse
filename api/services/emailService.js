@@ -1,10 +1,63 @@
 import nodemailer from "nodemailer";
 
+const smtpConfig = () => {
+  const host = process.env.EMAIL_HOST || process.env.MAIL_SMTP_HOST;
+  const user = process.env.EMAIL_USER || process.env.MAIL_SMTP_USER;
+  const pass = process.env.EMAIL_PASS || process.env.MAIL_SMTP_PASS;
+  const portRaw = process.env.EMAIL_PORT || process.env.MAIL_SMTP_PORT || "587";
+  const portNum = parseInt(portRaw, 10);
+  const secure =
+    process.env.EMAIL_SECURE === "true" ||
+    process.env.MAIL_SMTP_ENCRYPTION === "ssl" ||
+    portNum === 465;
+
+  return { host, user, pass, portNum, secure };
+};
+
+/** True when real SMTP credentials are present (not Ethereal fallback). */
+export const isSmtpConfigured = () => {
+  const { host, user, pass } = smtpConfig();
+  return Boolean(host && user && pass);
+};
+
+/** Safe summary for logs / health checks — never includes secrets. */
+export const getSmtpStatus = () => {
+  const { host, portNum, secure, user } = smtpConfig();
+  if (!isSmtpConfigured()) {
+    return { mode: "ethereal", configured: false };
+  }
+  return {
+    mode: "smtp",
+    configured: true,
+    host,
+    port: portNum,
+    secure,
+    user,
+    from: defaultFromAddress(),
+  };
+};
+
+const defaultFromAddress = () => {
+  if (process.env.EMAIL_FROM) return process.env.EMAIL_FROM;
+  if (process.env.MAIL_FROM_NAME && process.env.MAIL_FROM) {
+    return `${process.env.MAIL_FROM_NAME} <${process.env.MAIL_FROM}>`;
+  }
+  if (process.env.MAIL_FROM) return process.env.MAIL_FROM;
+  const { user } = smtpConfig();
+  return user || `no-reply@${process.env.DOMAIN || "localhost"}`;
+};
+
+const defaultReplyTo = () =>
+  process.env.MAIL_TO || process.env.MAIL_FROM || undefined;
+
+const shouldVerifySmtp =
+  () => process.env.EMAIL_SMTP_VERIFY === "true";
+
 // Helper that creates a transporter. If no SMTP env vars are configured,
 // fall back to an Ethereal test account (useful for local development).
 const createTransporter = async () => {
-  const hasSmtp =
-    process.env.EMAIL_HOST && process.env.EMAIL_USER && process.env.EMAIL_PASS;
+  const { host, user, pass, portNum, secure } = smtpConfig();
+  const hasSmtp = host && user && pass;
   if (!hasSmtp) {
     // Create a test account and return a transporter for it
     const testAccount = await nodemailer.createTestAccount();
@@ -21,17 +74,14 @@ const createTransporter = async () => {
     return transporter;
   }
 
-  const portNum = parseInt(process.env.EMAIL_PORT || "587", 10);
-  const secure = process.env.EMAIL_SECURE === "true" || portNum === 465;
-
   // Add sensible timeouts and debugging flags to help diagnose socket issues
   const transportOptions = {
-    host: process.env.EMAIL_HOST,
+    host,
     port: portNum,
     secure,
     auth: {
-      user: process.env.EMAIL_USER,
-      pass: process.env.EMAIL_PASS,
+      user,
+      pass,
     },
     logger: process.env.EMAIL_DEBUG === "true",
     debug: process.env.EMAIL_DEBUG === "true",
@@ -50,11 +100,6 @@ const createTransporter = async () => {
   return nodemailer.createTransport(transportOptions);
 };
 
-const defaultFrom =
-  process.env.EMAIL_FROM ||
-  process.env.EMAIL_USER ||
-  `no-reply@${process.env.DOMAIN || "localhost"}`;
-
 const clientBaseUrl = () =>
   (process.env.CLIENT_URL || process.env.DOMAIN || "http://localhost:5173").replace(
     /\/$/,
@@ -63,46 +108,48 @@ const clientBaseUrl = () =>
 
 const handleSend = async (message) => {
   const transporter = await createTransporter();
-  // ensure we set a from address
-  message.from = message.from || defaultFrom;
+  message.from = message.from || defaultFromAddress();
+  if (!message.replyTo && defaultReplyTo()) {
+    message.replyTo = defaultReplyTo();
+  }
 
-  // Verify transporter connectivity before sending to surface connection errors early
-  try {
-    // transporter.verify() will throw if it cannot connect/authenticate
-    await transporter.verify();
-  } catch (verifyErr) {
-    // If verification fails, include SMTP details for easier debugging.
-    const smtpInfo = {
-      host: transporter.options && transporter.options.host,
-      port: transporter.options && transporter.options.port,
-      secure: transporter.options && transporter.options.secure,
-    };
-    console.error("SMTP verify failed", {
-      error: verifyErr && verifyErr.message,
-      smtpInfo,
-    });
+  const usingRealSmtp = isSmtpConfigured() && !transporter._isTestAccount;
 
-    // Optional fallback to Ethereal if explicitly allowed for development
-    if (process.env.EMAIL_FALLBACK_TO_ETHEREAL === "true") {
-      console.warn(
-        "Falling back to Ethereal test account due to SMTP verify failure"
-      );
-      const testAccount = await nodemailer.createTestAccount();
-      const ethTransporter = nodemailer.createTransport({
-        host: testAccount.smtp.host,
-        port: testAccount.smtp.port,
-        secure: testAccount.smtp.secure,
-        auth: { user: testAccount.user, pass: testAccount.pass },
+  // Optional verify — off by default for real SMTP (sendMail still validates auth)
+  if (shouldVerifySmtp() || !usingRealSmtp) {
+    try {
+      await transporter.verify();
+    } catch (verifyErr) {
+      const smtpInfo = {
+        host: transporter.options?.host,
+        port: transporter.options?.port,
+        secure: transporter.options?.secure,
+      };
+      console.error("SMTP verify failed", {
+        error: verifyErr?.message,
+        smtpInfo,
       });
-      ethTransporter._isTestAccount = true;
-      const info = await ethTransporter.sendMail(message);
-      const preview = nodemailer.getTestMessageUrl(info);
-      if (preview) console.log("Ethereal preview URL:", preview);
-      return info;
-    }
 
-    // otherwise rethrow to be handled by caller
-    throw verifyErr;
+      if (process.env.EMAIL_FALLBACK_TO_ETHEREAL === "true") {
+        console.warn(
+          "Falling back to Ethereal test account due to SMTP verify failure"
+        );
+        const testAccount = await nodemailer.createTestAccount();
+        const ethTransporter = nodemailer.createTransport({
+          host: testAccount.smtp.host,
+          port: testAccount.smtp.port,
+          secure: testAccount.smtp.secure,
+          auth: { user: testAccount.user, pass: testAccount.pass },
+        });
+        ethTransporter._isTestAccount = true;
+        const info = await ethTransporter.sendMail(message);
+        const preview = nodemailer.getTestMessageUrl(info);
+        if (preview) console.log("Ethereal preview URL:", preview);
+        return info;
+      }
+
+      throw verifyErr;
+    }
   }
 
   const info = await transporter.sendMail(message);

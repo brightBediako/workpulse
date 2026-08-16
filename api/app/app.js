@@ -22,6 +22,7 @@ import uploadRoute from "../routes/upload.route.js";
 
 import cors from "cors";
 import cookieParser from "cookie-parser";
+import { expressCorsOptions } from "../config/corsOrigins.js";
 
 import dbConnect from "../config/dbConnect.js";
 import { globalErrhandler, notFound } from "../middlewares/globalErrHandler.js";
@@ -32,88 +33,11 @@ dotenv.config();
 dbConnect();
 ensureUploadDirs();
 const app = express();
+app.set("trust proxy", 1);
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const uploadsRoot = path.join(__dirname, "..", "uploads");
 
-//cors configuration
-const corsOptions = {
-  origin: function (origin, callback) {
-    // Allow requests with no origin (like mobile apps or curl requests)
-    if (!origin) return callback(null, true);
-
-    const allowedOrigins = [
-      "https://workpulse-omega.vercel.app",
-      "http://localhost:5173",
-      "http://localhost:3000",
-      "http://127.0.0.1:5173",
-      "http://127.0.0.1:3000",
-    ];
-
-    const clientUrl = (process.env.CLIENT_URL || "").replace(/\/$/, "");
-    if (clientUrl && !allowedOrigins.includes(clientUrl)) {
-      allowedOrigins.push(clientUrl);
-    }
-
-    // Check if origin is in allowed list
-    if (allowedOrigins.indexOf(origin) !== -1) {
-      return callback(null, true);
-    }
-
-    // Check for common deployment patterns
-    const allowedPatterns = [
-      /^https:\/\/.*\.vercel\.app$/,
-      /^https:\/\/.*\.netlify\.app$/,
-      /^https:\/\/.*\.github\.io$/,
-      /^https:\/\/.*\.onrender\.com$/,
-    ];
-
-    for (const pattern of allowedPatterns) {
-      if (pattern.test(origin)) {
-        return callback(null, true);
-      }
-    }
-
-    // For development, allow any localhost
-    if (origin.includes("localhost") || origin.includes("127.0.0.1")) {
-      return callback(null, true);
-    }
-
-    callback(new Error("Not allowed by CORS"));
-  },
-  credentials: true, // Allow cookies to be sent
-  methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
-  allowedHeaders: [
-    "Content-Type",
-    "Authorization",
-    "X-Requested-With",
-    "Accept",
-    "Origin",
-  ],
-  optionsSuccessStatus: 200, // Some legacy browsers (IE11, various SmartTVs) choke on 204
-};
-
-// pass incoming data
-app.use(cors(corsOptions));
-
-// Global preflight handler (no wildcard path)
-app.use((req, res, next) => {
-  if (req.method === "OPTIONS") {
-    const requestOrigin = req.headers.origin || "*";
-    res.header("Access-Control-Allow-Origin", requestOrigin);
-    res.header("Vary", "Origin");
-    res.header("Access-Control-Allow-Credentials", "true");
-    res.header(
-      "Access-Control-Allow-Methods",
-      "GET, POST, PUT, DELETE, OPTIONS, PATCH"
-    );
-    res.header(
-      "Access-Control-Allow-Headers",
-      "Content-Type, Authorization, X-Requested-With, Accept, Origin"
-    );
-    return res.sendStatus(200);
-  }
-  next();
-});
+app.use(cors(expressCorsOptions));
 
 // Paystack webhook needs the raw body for HMAC signature verification (before JSON parser)
 app.post(

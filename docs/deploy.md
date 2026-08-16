@@ -55,6 +55,8 @@ CORS allows `https://workpulse-omega.vercel.app`, `CLIENT_URL`, and `*.vercel.ap
 6. Confirm Socket.IO on the same host (`/socket.io`)
 7. Register Paystack webhook: `https://<api-host>/api/orders/webhook` (`charge.success`)
 
+**Render free tier:** The API sleeps after inactivity (~50s cold start). Browsers may show `CORS request did not succeed` with status `(null)` while the service wakes — this is a network timeout, not a misconfigured allow-list. The client retries REST calls and Socket.IO reconnects with polling first. For production, use a paid Render plan or an uptime ping to `/healthz` every 10–14 minutes.
+
 ### Environment checklist (API)
 
 Copy `api/.env.example` → `api/.env` (never commit secrets).

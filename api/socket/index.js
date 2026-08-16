@@ -1,5 +1,6 @@
 import { Server } from "socket.io";
 import jwt from "jsonwebtoken";
+import { socketCorsOptions } from "../config/corsOrigins.js";
 
 let io = null;
 
@@ -31,49 +32,19 @@ const resolveSocketToken = (socket) => {
   return parseCookieToken(socket.handshake?.headers?.cookie);
 };
 
-const buildCorsOrigin = () => {
-  return (origin, callback) => {
-    if (!origin) return callback(null, true);
-
-    const allowedOrigins = [
-      "https://workpulse-omega.vercel.app",
-      (process.env.CLIENT_URL || "").replace(/\/$/, ""),
-      "http://localhost:5173",
-      "http://localhost:3000",
-      "http://127.0.0.1:5173",
-      "http://127.0.0.1:3000",
-    ].filter(Boolean);
-
-    if (allowedOrigins.includes(origin)) return callback(null, true);
-
-    const patterns = [
-      /^https:\/\/.*\.vercel\.app$/,
-      /^https:\/\/.*\.netlify\.app$/,
-      /^https:\/\/.*\.github\.io$/,
-      /^https:\/\/.*\.onrender\.com$/,
-    ];
-    if (patterns.some((p) => p.test(origin))) return callback(null, true);
-
-    if (origin.includes("localhost") || origin.includes("127.0.0.1")) {
-      return callback(null, true);
-    }
-
-    callback(new Error("Not allowed by CORS"));
-  };
-};
-
 /**
  * Attach Socket.IO to the HTTP server. Call once from server.js.
  * Clients join room `user:<userId>` after JWT auth.
  */
 export const initSocket = (httpServer) => {
   io = new Server(httpServer, {
-    cors: {
-      origin: buildCorsOrigin(),
-      credentials: true,
-      methods: ["GET", "POST"],
-    },
+    cors: socketCorsOptions,
     path: process.env.SOCKET_PATH || "/socket.io",
+    pingTimeout: 60000,
+    pingInterval: 25000,
+    connectTimeout: 45000,
+    transports: ["polling", "websocket"],
+    allowUpgrades: true,
   });
 
   io.use((socket, next) => {

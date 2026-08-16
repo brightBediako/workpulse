@@ -1,6 +1,13 @@
+import { isOriginAllowed } from "../config/corsOrigins.js";
+
 export const globalErrhandler = (err, req, res, next) => {
-  //stack
-  //message
+  const origin = req.headers.origin;
+  if (origin && isOriginAllowed(origin)) {
+    res.header("Access-Control-Allow-Origin", origin);
+    res.header("Access-Control-Allow-Credentials", "true");
+    res.header("Vary", "Origin");
+  }
+
   const stack = err?.stack;
   const statusCode = err?.statusCode ? err?.statusCode : 500;
   const message = err?.message;

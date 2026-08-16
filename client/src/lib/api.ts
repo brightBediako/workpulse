@@ -54,38 +54,56 @@ export async function api<T = unknown>(
     if (token) headers.set("Authorization", `Bearer ${token}`);
   }
 
-  const res = await fetch(`${API_URL}${path}`, {
-    ...rest,
-    headers,
-    credentials: "include",
-    body:
-      body === undefined
-        ? undefined
-        : body instanceof FormData
-          ? body
-          : JSON.stringify(body),
-  });
+  const url = `${API_URL}${path}`;
+  let lastNetworkError: unknown;
 
-  const text = await res.text();
-  let data: unknown = null;
-  if (text) {
+  for (let attempt = 0; attempt < 3; attempt += 1) {
     try {
-      data = JSON.parse(text);
-    } catch {
-      data = { message: text };
+      const res = await fetch(url, {
+        ...rest,
+        headers,
+        credentials: "include",
+        body:
+          body === undefined
+            ? undefined
+            : body instanceof FormData
+              ? body
+              : JSON.stringify(body),
+      });
+
+      const text = await res.text();
+      let data: unknown = null;
+      if (text) {
+        try {
+          data = JSON.parse(text);
+        } catch {
+          data = { message: text };
+        }
+      }
+
+      if (!res.ok) {
+        const message =
+          typeof data === "object" &&
+          data &&
+          "message" in data &&
+          typeof (data as { message: unknown }).message === "string"
+            ? (data as { message: string }).message
+            : `Request failed (${res.status})`;
+        throw new ApiError(res.status, message);
+      }
+
+      return data as T;
+    } catch (err) {
+      if (err instanceof ApiError) throw err;
+      lastNetworkError = err;
+      if (attempt < 2) {
+        await new Promise((resolve) => setTimeout(resolve, 1500 * (attempt + 1)));
+        continue;
+      }
     }
   }
 
-  if (!res.ok) {
-    const message =
-      typeof data === "object" &&
-      data &&
-      "message" in data &&
-      typeof (data as { message: unknown }).message === "string"
-        ? (data as { message: string }).message
-        : `Request failed (${res.status})`;
-    throw new ApiError(res.status, message);
-  }
-
-  return data as T;
+  throw lastNetworkError instanceof Error
+    ? lastNetworkError
+    : new Error("Network request failed. The API may be waking up — try again.");
 }

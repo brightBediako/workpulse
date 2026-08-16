@@ -10,6 +10,7 @@ import { EmptyState } from "@/components/ui/EmptyState";
 import { CoverImageField } from "@/components/ui/CoverImageField";
 import { api, ApiError, getApiUrl } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
+import { enableWorkerMode } from "@/lib/workerMode";
 import type { Category, Job } from "@/lib/types";
 
 function mediaUrl(url?: string) {
@@ -256,11 +257,7 @@ export default function JobsPage() {
     setEnabling("worker");
     setError("");
     try {
-      await api(`/api/users/update/${user._id}`, {
-        method: "PUT",
-        body: { isSeller: true },
-      });
-      refreshUser({ ...user, isSeller: true });
+      await enableWorkerMode(user, refreshUser);
       setMessage("Worker mode enabled. You can apply to jobs now.");
     } catch (err) {
       setError(

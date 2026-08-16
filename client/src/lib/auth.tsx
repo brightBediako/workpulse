@@ -45,17 +45,43 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    const cached = loadCachedUser();
-    const token = getStoredToken();
-    if (cached && token) setUser(cached);
-    setLoading(false);
-  }, []);
-
   const refreshUser = useCallback((next: User | null) => {
     setUser(next);
     cacheUser(next);
   }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function bootstrap() {
+      const token = getStoredToken();
+      if (!token) {
+        if (!cancelled) setLoading(false);
+        return;
+      }
+
+      try {
+        const me = await api<User>("/api/users/me");
+        if (!cancelled) refreshUser(me);
+      } catch {
+        const cached = loadCachedUser();
+        if (!cancelled) {
+          if (cached && token) setUser(cached);
+          else {
+            setStoredToken(null);
+            setUser(null);
+          }
+        }
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    }
+
+    bootstrap();
+    return () => {
+      cancelled = true;
+    };
+  }, [refreshUser]);
 
   const login = useCallback(async (username: string, password: string) => {
     const res = await api<{

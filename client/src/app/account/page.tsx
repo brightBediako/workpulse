@@ -19,6 +19,7 @@ import { StatusChip } from "@/components/ui/StatusChip";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { api, ApiError, getApiUrl } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
+import { enableWorkerMode } from "@/lib/workerMode";
 import type { User } from "@/lib/types";
 
 type Profile = User & {
@@ -584,11 +585,7 @@ export default function AccountPage() {
     setError("");
     setMessage("");
     try {
-      await api(`/api/users/update/${user._id}`, {
-        method: "PUT",
-        body: { isSeller: true },
-      });
-      refreshUser({ ...user, isSeller: true });
+      await enableWorkerMode(user, refreshUser);
       setMessage("Worker mode enabled.");
       setActiveSection("profile");
     } catch (err) {

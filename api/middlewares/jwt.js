@@ -1,5 +1,6 @@
 import jwt from "jsonwebtoken";
 import { createError } from "../middlewares/globalErrHandler.js";
+import { applyUserRoles, loadUserRoles } from "../utils/authRoles.js";
 
 /**
  * Resolve JWT from httpOnly cookie `accessToken` or `Authorization: Bearer <token>`.
@@ -23,13 +24,16 @@ export const verifyToken = (req, res, next) => {
   const token = resolveAccessToken(req);
   if (!token) return next(createError(401, "You are not authenticated!"));
 
-  jwt.verify(token, process.env.JWT_KEY, (err, payload) => {
+  jwt.verify(token, process.env.JWT_KEY, async (err, payload) => {
     if (err) return next(createError(403, "Token is not valid!"));
     req.userId = payload.id;
-    req.isSeller = payload.isSeller;
-    req.isEmployer = Boolean(payload.isEmployer);
-    req.isAdmin = payload.isAdmin;
-    req.isSuperAdmin = payload.isSuperAdmin;
-    next();
+
+    try {
+      const roles = await loadUserRoles(payload.id);
+      applyUserRoles(req, roles);
+      next();
+    } catch (roleErr) {
+      next(roleErr);
+    }
   });
 };

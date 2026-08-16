@@ -144,7 +144,10 @@ export const getMe = async (req, res, next) => {
     const user = await User.findById(req.userId);
     if (!user) return next(createError(404, "User not found!"));
     const { password, ...info } = user._doc;
-    res.status(200).json(publicUserView(info, { includeDocuments: true }));
+    res.status(200).json({
+      ...publicUserView(info, { includeDocuments: true }),
+      accountModes: accountModes(user),
+    });
   } catch (err) {
     next(err);
   }
@@ -221,10 +224,24 @@ export const updateUser = async (req, res, next) => {
     );
     if (!updatedUser) return next(createError(404, "User not found!"));
 
+    const roleTouched =
+      updates.isSeller !== undefined || updates.isEmployer !== undefined;
     const { password, ...info } = updatedUser._doc;
-    res.status(200).send(
-      publicUserView(info, { includeDocuments: true })
-    );
+    const view = publicUserView(info, { includeDocuments: true });
+
+    if (roleTouched) {
+      const token = signAccessToken(updatedUser);
+      return res
+        .cookie("accessToken", token, getAccessTokenCookieOptions())
+        .status(200)
+        .json({
+          ...view,
+          accountModes: accountModes(updatedUser),
+          token,
+        });
+    }
+
+    res.status(200).json(view);
   } catch (err) {
     next(err);
   }

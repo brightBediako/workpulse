@@ -1,6 +1,7 @@
 import { Server } from "socket.io";
 import jwt from "jsonwebtoken";
 import { socketCorsOptions } from "../config/corsOrigins.js";
+import { applyUserRoles, loadUserRoles } from "../utils/authRoles.js";
 
 let io = null;
 
@@ -47,7 +48,7 @@ export const initSocket = (httpServer) => {
     allowUpgrades: true,
   });
 
-  io.use((socket, next) => {
+  io.use(async (socket, next) => {
     try {
       const token = resolveSocketToken(socket);
       if (!token) {
@@ -55,9 +56,8 @@ export const initSocket = (httpServer) => {
       }
       const payload = jwt.verify(token, process.env.JWT_KEY);
       socket.userId = String(payload.id);
-      socket.isSeller = Boolean(payload.isSeller);
-      socket.isEmployer = Boolean(payload.isEmployer);
-      socket.isAdmin = Boolean(payload.isAdmin);
+      const roles = await loadUserRoles(payload.id);
+      applyUserRoles(socket, roles);
       next();
     } catch {
       next(new Error("Unauthorized"));

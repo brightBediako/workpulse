@@ -10,6 +10,7 @@ import { StatusChip } from "@/components/ui/StatusChip";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { api, ApiError } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
+import { enableWorkerMode } from "@/lib/workerMode";
 import type { Category, ServiceRequest } from "@/lib/types";
 
 type RequestForm = {
@@ -461,11 +462,7 @@ export default function ServiceRequestsPageContent() {
     setEnabling(true);
     setError("");
     try {
-      await api(`/api/users/update/${user._id}`, {
-        method: "PUT",
-        body: { isSeller: true },
-      });
-      refreshUser({ ...user, isSeller: true });
+      await enableWorkerMode(user, refreshUser);
       setMessage("Worker mode enabled. You can accept requests in your inbox.");
       setTab("inbox");
     } catch (err) {

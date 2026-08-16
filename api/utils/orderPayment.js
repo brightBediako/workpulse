@@ -1,5 +1,7 @@
 import Order from "../models/order.model.js";
 import Gig from "../models/gig.model.js";
+import Application from "../models/application.model.js";
+import ServiceRequest from "../models/serviceRequest.model.js";
 import { computeOrderFees } from "./orderFees.js";
 import { createNotification } from "../services/notificationService.js";
 
@@ -28,14 +30,46 @@ export const markOrderPaid = async (order) => {
   order.sellerEarnings = sellerEarnings;
   await order.save();
 
-  await Gig.findByIdAndUpdate(order.gigId, { $inc: { sales: 1 } });
+  if (order.gigId) {
+    await Gig.findByIdAndUpdate(order.gigId, { $inc: { sales: 1 } });
+  }
+
+  if (order.applicationId) {
+    await Application.findByIdAndUpdate(order.applicationId, {
+      status: "paid",
+      orderId: String(order._id),
+    });
+  }
+
+  if (order.serviceRequestId) {
+    await ServiceRequest.findByIdAndUpdate(order.serviceRequestId, {
+      status: "paid",
+      orderId: String(order._id),
+    });
+  }
+
+  const payLink =
+    order.sourceType === "job"
+      ? `/jobs`
+      : order.sourceType === "service_request"
+        ? `/service-requests/${order.serviceRequestId}`
+        : `/orders/${order._id}`;
 
   await createNotification({
     userId: order.sellerId,
     type: "order_paid",
-    message: `New paid order for "${order.title}".`,
-    link: `/orders/${order._id}`,
+    message: `Payment received for "${order.title}". You can request a payout from Account.`,
+    link: "/account",
   });
+
+  if (order.buyerId && order.buyerId !== order.sellerId) {
+    await createNotification({
+      userId: order.buyerId,
+      type: "order_paid",
+      message: `Your payment for "${order.title}" was successful.`,
+      link: payLink,
+    });
+  }
 
   return { order, alreadyPaid: false, feePercent };
 };

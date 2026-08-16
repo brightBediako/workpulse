@@ -3,9 +3,32 @@ const { Schema } = mongoose;
 
 const OrderSchema = new Schema(
   {
+    /** gig | job | service_request */
+    sourceType: {
+      type: String,
+      enum: ["gig", "job", "service_request"],
+      default: "gig",
+      index: true,
+    },
     gigId: {
       type: String,
-      required: true,
+      required: false,
+      index: true,
+    },
+    jobId: {
+      type: String,
+      required: false,
+      index: true,
+    },
+    applicationId: {
+      type: String,
+      required: false,
+      index: true,
+    },
+    serviceRequestId: {
+      type: String,
+      required: false,
+      index: true,
     },
     img: {
       type: String,
@@ -79,5 +102,13 @@ const OrderSchema = new Schema(
     timestamps: true,
   }
 );
+
+OrderSchema.pre("validate", function orderSourceGuard(next) {
+  if (!this.gigId && !this.jobId && !this.serviceRequestId) {
+    next(new Error("Order must link to a gig, job, or service request."));
+  } else {
+    next();
+  }
+});
 
 export default mongoose.model("Order", OrderSchema);

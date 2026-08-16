@@ -14,6 +14,10 @@ type Overview = {
   bannedUsers?: number;
   sellers?: number;
   employers?: number;
+  totalJobs?: number;
+  openJobs?: number;
+  paidJobApplications?: number;
+  pendingWorkReview?: number;
   totalGigs?: number;
   pendingGigs?: number;
   approvedGigs?: number;
@@ -112,6 +116,21 @@ export default function AdminOverviewPage() {
       href: "/admin/users?role=employer",
     },
     {
+      label: "Job posts",
+      value: overview?.totalJobs,
+      href: "/admin/jobs",
+    },
+    {
+      label: "Work to review",
+      value: overview?.pendingWorkReview,
+      href: "/admin/jobs",
+    },
+    {
+      label: "Paid job work",
+      value: overview?.paidJobApplications,
+      href: "/admin/jobs",
+    },
+    {
       label: "Pending gigs",
       value: overview?.pendingGigs,
       href: "/admin/gigs?status=pending",
@@ -147,6 +166,9 @@ export default function AdminOverviewPage() {
         <div className="flex flex-wrap gap-sm">
           <Link href="/admin/payouts">
             <Button variant="conversion">Review payouts</Button>
+          </Link>
+          <Link href="/admin/jobs">
+            <Button variant="outline">View jobs & payments</Button>
           </Link>
           <Link href="/admin/gigs?status=pending">
             <Button variant="outline">Review pending gigs</Button>

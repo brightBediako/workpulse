@@ -12,6 +12,9 @@ import {
   acceptApplication,
   rejectApplication,
   withdrawApplication,
+  submitJobWork,
+  approveJobWork,
+  createJobPaymentIntent,
 } from "../controllers/job.controller.js";
 import { verifyToken } from "../middlewares/jwt.js";
 import { verifyEmployer } from "../middlewares/adminAuth.js";
@@ -43,6 +46,23 @@ router.put(
   "/:id/applications/:appId/withdraw",
   verifyToken,
   withdrawApplication
+);
+router.put(
+  "/:id/applications/:appId/submit-work",
+  verifyToken,
+  submitJobWork
+);
+router.put(
+  "/:id/applications/:appId/approve-work",
+  verifyToken,
+  verifyEmployer,
+  approveJobWork
+);
+router.post(
+  "/:id/applications/:appId/payment-intent",
+  verifyToken,
+  verifyEmployer,
+  createJobPaymentIntent
 );
 
 router.get("/:id", getJob);

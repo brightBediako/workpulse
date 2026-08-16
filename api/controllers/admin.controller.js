@@ -1,5 +1,7 @@
 import User from "../models/user.model.js";
 import Gig from "../models/gig.model.js";
+import Job from "../models/job.model.js";
+import Application from "../models/application.model.js";
 import Order from "../models/order.model.js";
 import Review from "../models/review.model.js";
 import PayoutRequest from "../models/payoutRequest.model.js";
@@ -24,6 +26,16 @@ export const getDashboardStats = async (req, res, next) => {
     const bannedUsers = await User.countDocuments({ isBanned: true });
     const sellers = await User.countDocuments({ isSeller: true });
     const employers = await User.countDocuments({ isEmployer: true });
+
+    const totalJobs = await Job.countDocuments();
+    const openJobs = await Job.countDocuments({ status: "open" });
+    const filledJobs = await Job.countDocuments({ status: "filled" });
+    const paidJobApplications = await Application.countDocuments({
+      status: "paid",
+    });
+    const pendingWorkReview = await Application.countDocuments({
+      status: "work_submitted",
+    });
 
     // Gig stats
     const totalGigs = await Gig.countDocuments();
@@ -94,6 +106,11 @@ export const getDashboardStats = async (req, res, next) => {
         bannedUsers,
         sellers,
         employers,
+        totalJobs,
+        openJobs,
+        filledJobs,
+        paidJobApplications,
+        pendingWorkReview,
         totalGigs,
         pendingGigs,
         approvedGigs,
@@ -1105,4 +1122,97 @@ const generateRevenueReport = async (startDate, endDate) => {
       orderCount: 0,
     }
   );
+};
+
+/** GET /api/admin/jobs — all jobs with applications, payment, and party details */
+export const getAdminJobs = async (req, res, next) => {
+  try {
+    const { page = 1, limit = 20, status } = req.query;
+    const skip = (Math.max(Number(page), 1) - 1) * Math.min(Number(limit) || 20, 100);
+    const take = Math.min(Math.max(Number(limit) || 20, 1), 100);
+
+    const filter = {};
+    if (status) filter.status = status;
+
+    const [jobs, totalJobs] = await Promise.all([
+      Job.find(filter).sort({ createdAt: -1 }).skip(skip).limit(take),
+      Job.countDocuments(filter),
+    ]);
+
+    const jobIds = jobs.map((j) => String(j._id));
+    const applications = jobIds.length
+      ? await Application.find({ jobId: { $in: jobIds } }).sort({
+          createdAt: -1,
+        })
+      : [];
+
+    const userIds = new Set();
+    const orderIds = new Set();
+    for (const j of jobs) userIds.add(String(j.employerId));
+    for (const a of applications) {
+      userIds.add(String(a.workerId));
+      userIds.add(String(a.employerId));
+      if (a.orderId) orderIds.add(String(a.orderId));
+    }
+
+    const [users, orders] = await Promise.all([
+      User.find({ _id: { $in: [...userIds] } }).select(
+        "username email phone isEmployer isSeller"
+      ),
+      orderIds.size
+        ? Order.find({ _id: { $in: [...orderIds] } })
+        : [],
+    ]);
+
+    const userMap = Object.fromEntries(
+      users.map((u) => [
+        String(u._id),
+        {
+          _id: String(u._id),
+          username: u.username,
+          email: u.email,
+          phone: u.phone,
+          isEmployer: u.isEmployer,
+          isSeller: u.isSeller,
+        },
+      ])
+    );
+    const orderMap = Object.fromEntries(
+      orders.map((o) => [String(o._id), o.toObject()])
+    );
+
+    const appsByJob = applications.reduce((acc, a) => {
+      const key = String(a.jobId);
+      if (!acc[key]) acc[key] = [];
+      const plain = a.toObject();
+      acc[key].push({
+        ...plain,
+        worker: userMap[String(a.workerId)] || null,
+        order: plain.orderId ? orderMap[String(plain.orderId)] || null : null,
+      });
+      return acc;
+    }, {});
+
+    const payload = jobs.map((j) => {
+      const plain = j.toObject();
+      return {
+        ...plain,
+        employer: userMap[String(j.employerId)] || null,
+        applications: appsByJob[String(j._id)] || [],
+      };
+    });
+
+    res.status(200).json({
+      jobs: payload,
+      pagination: {
+        currentPage: Math.max(Number(page), 1),
+        totalPages: Math.ceil(totalJobs / take) || 1,
+        totalJobs,
+        hasNext: skip + take < totalJobs,
+        hasPrev: skip > 0,
+      },
+    });
+  } catch (err) {
+    next(err);
+  }
 };

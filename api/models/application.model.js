@@ -32,7 +32,15 @@ const ApplicationSchema = new Schema(
     },
     status: {
       type: String,
-      enum: ["pending", "accepted", "rejected", "withdrawn"],
+      enum: [
+        "pending",
+        "accepted",
+        "rejected",
+        "withdrawn",
+        "work_submitted",
+        "work_approved",
+        "paid",
+      ],
       default: "pending",
       index: true,
     },
@@ -45,6 +53,33 @@ const ApplicationSchema = new Schema(
       required: false,
       trim: true,
       maxlength: 500,
+    },
+    /** Worker flagged job/work complete */
+    workSubmittedAt: {
+      type: Date,
+      required: false,
+    },
+    workNote: {
+      type: String,
+      required: false,
+      trim: true,
+      maxlength: 2000,
+    },
+    /** Employer approved completed work (before payment) */
+    workApprovedAt: {
+      type: Date,
+      required: false,
+    },
+    agreedAmount: {
+      type: Number,
+      required: false,
+      min: 0,
+    },
+    /** Paystack order after employer pays */
+    orderId: {
+      type: String,
+      required: false,
+      index: true,
     },
   },
   { timestamps: true }

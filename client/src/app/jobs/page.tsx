@@ -46,6 +46,11 @@ type ApplicationRow = {
   status: string;
   coverLetter?: string;
   proposedRate?: number;
+  agreedAmount?: number;
+  orderId?: string;
+  workNote?: string;
+  workSubmittedAt?: string;
+  workApprovedAt?: string;
   reviewNote?: string;
   createdAt?: string;
   job?: Job | null;
@@ -113,6 +118,9 @@ export default function JobsPage() {
   const [reviewJobId, setReviewJobId] = useState<string | null>(null);
   const [reviewApps, setReviewApps] = useState<ApplicationRow[]>([]);
   const [loadingReview, setLoadingReview] = useState(false);
+  const [approveAmount, setApproveAmount] = useState<Record<string, string>>({});
+  const [workNote, setWorkNote] = useState("");
+  const [submittingWorkId, setSubmittingWorkId] = useState<string | null>(null);
 
   const isEmployer = Boolean(user?.isEmployer || user?.accountModes?.employer);
   const isWorker = Boolean(user?.isSeller || user?.accountModes?.worker);
@@ -408,6 +416,67 @@ export default function JobsPage() {
     );
   }
 
+  async function submitWork(jobId: string, appId: string) {
+    setSubmittingWorkId(appId);
+    setError("");
+    setMessage("");
+    try {
+      await api(`/api/jobs/${jobId}/applications/${appId}/submit-work`, {
+        method: "PUT",
+        body: workNote.trim() ? { note: workNote.trim() } : {},
+      });
+      setMessage("Work submitted for employer approval.");
+      setWorkNote("");
+      await loadMyApplications();
+      if (reviewJobId === jobId) await openReview(jobId);
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Could not submit work");
+    } finally {
+      setSubmittingWorkId(null);
+    }
+  }
+
+  async function approveWork(jobId: string, app: ApplicationRow) {
+    const amountRaw = approveAmount[app._id] ?? "";
+    const body: Record<string, unknown> = {};
+    if (amountRaw.trim()) body.amount = Number(amountRaw);
+    else if (app.proposedRate != null) body.amount = app.proposedRate;
+
+    await runAction(
+      app._id,
+      () =>
+        api(`/api/jobs/${jobId}/applications/${app._id}/approve-work`, {
+          method: "PUT",
+          body,
+        }).then(() => undefined),
+      "Work approved — proceed to payment"
+    );
+  }
+
+  async function payForWork(jobId: string, appId: string) {
+    setBusyId(appId);
+    setError("");
+    setMessage("");
+    try {
+      const res = await api<{
+        authorization_url?: string;
+        reference?: string;
+      }>(`/api/jobs/${jobId}/applications/${appId}/payment-intent`, {
+        method: "POST",
+        body: {},
+      });
+      if (res.authorization_url) {
+        window.location.href = res.authorization_url;
+        return;
+      }
+      setMessage("Payment started. Complete checkout to pay the worker.");
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Could not start payment");
+    } finally {
+      setBusyId(null);
+    }
+  }
+
   const pageTitle =
     tab === "mine"
       ? "My job posts"
@@ -687,6 +756,56 @@ export default function JobsPage() {
                     <p className="font-data-price text-primary mb-sm">
                       Proposed: GHS {Number(a.proposedRate).toLocaleString()}
                     </p>
+                  ) : null}
+                  {a.agreedAmount != null ? (
+                    <p className="font-data-price text-primary mb-sm">
+                      Agreed: GHS {Number(a.agreedAmount).toLocaleString()}
+                    </p>
+                  ) : null}
+                  {a.status === "accepted" ? (
+                    <div className="space-y-sm mt-sm">
+                      <div className="space-y-xs">
+                        <label className="font-label-caps text-on-surface-variant block">
+                          Completion note (optional)
+                        </label>
+                        <textarea
+                          className="w-full min-h-20 bg-surface-container-lowest border border-outline-variant rounded-md px-md py-md font-sans text-[15px]"
+                          value={workNote}
+                          onChange={(e) => setWorkNote(e.target.value)}
+                          placeholder="Describe what was completed…"
+                        />
+                      </div>
+                      <Button
+                        variant="conversion"
+                        className="!py-sm !px-md text-sm"
+                        loading={submittingWorkId === a._id}
+                        onClick={() => submitWork(a.jobId, a._id)}
+                      >
+                        Mark work done
+                      </Button>
+                    </div>
+                  ) : null}
+                  {a.status === "work_submitted" ? (
+                    <p className="font-body-dense text-on-surface-variant mt-sm">
+                      Waiting for employer to review your completed work.
+                    </p>
+                  ) : null}
+                  {a.status === "work_approved" ? (
+                    <p className="font-body-dense text-on-surface-variant mt-sm">
+                      Work approved — waiting for employer payment.
+                    </p>
+                  ) : null}
+                  {a.status === "paid" ? (
+                    <div className="mt-sm space-y-sm">
+                      <p className="font-body-dense text-on-primary-fixed-variant">
+                        Paid. Request your earnings from Account → Payout.
+                      </p>
+                      <Link href="/account">
+                        <Button variant="outline" className="!py-sm !px-md text-sm">
+                          Request payout
+                        </Button>
+                      </Link>
+                    </div>
                   ) : null}
                   {a.status === "pending" ? (
                     <Button
@@ -1006,6 +1125,65 @@ export default function JobsPage() {
                                   Reject
                                 </Button>
                               </div>
+                            ) : null}
+                            {a.status === "work_submitted" ? (
+                              <div className="space-y-sm pt-sm border-t border-outline-variant">
+                                {a.workNote ? (
+                                  <p className="font-body-dense italic">
+                                    Worker note: {a.workNote}
+                                  </p>
+                                ) : null}
+                                <Input
+                                  label="Payment amount (GHS)"
+                                  type="number"
+                                  min={0}
+                                  value={
+                                    approveAmount[a._id] ??
+                                    (a.proposedRate != null
+                                      ? String(a.proposedRate)
+                                      : "")
+                                  }
+                                  onChange={(e) =>
+                                    setApproveAmount((prev) => ({
+                                      ...prev,
+                                      [a._id]: e.target.value,
+                                    }))
+                                  }
+                                />
+                                <Button
+                                  className="!py-sm !px-md text-sm"
+                                  loading={busyId === a._id}
+                                  onClick={() => approveWork(j._id, a)}
+                                >
+                                  Approve work
+                                </Button>
+                              </div>
+                            ) : null}
+                            {a.status === "work_approved" ? (
+                              <div className="space-y-sm pt-sm border-t border-outline-variant">
+                                <p className="font-data-price text-primary">
+                                  Pay GHS{" "}
+                                  {Number(
+                                    a.agreedAmount ?? a.proposedRate ?? 0
+                                  ).toLocaleString()}
+                                </p>
+                                <Button
+                                  variant="conversion"
+                                  className="!py-sm !px-md text-sm"
+                                  loading={busyId === a._id}
+                                  onClick={() => payForWork(j._id, a._id)}
+                                >
+                                  Pay worker (Paystack)
+                                </Button>
+                              </div>
+                            ) : null}
+                            {a.status === "paid" ? (
+                              <p className="font-body-dense text-on-primary-fixed-variant pt-sm">
+                                Payment completed
+                                {a.agreedAmount != null
+                                  ? ` · GHS ${Number(a.agreedAmount).toLocaleString()}`
+                                  : ""}
+                              </p>
                             ) : null}
                           </div>
                         ))

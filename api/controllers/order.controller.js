@@ -112,6 +112,7 @@ export const intent = async (req, res, next) => {
     });
 
     const newOrder = new Order({
+      sourceType: "gig",
       gigId: gig._id,
       img: gig.cover,
       title: gig.title,
